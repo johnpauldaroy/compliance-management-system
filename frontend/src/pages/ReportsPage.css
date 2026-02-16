@@ -1,0 +1,143 @@
+.reports-page {
+  padding-bottom: 24px;
+}
+
+.reports-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.reports-title {
+  margin: 0;
+}
+
+.reports-row {
+  margin-bottom: 16px;
+}
+
+.reports-row-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.reports-bars {
+  height: 200px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  padding-bottom: 20px;
+}
+
+.reports-bar-col {
+  width: 12%;
+  text-align: center;
+}
+
+.reports-bar {
+  background: #e6f7ff;
+  border-top: 2px solid #1890ff;
+  border-top-left-radius: 4px;
+  border-top-right-radius: 4px;
+  margin-bottom: 8px;
+}
+
+.reports-bar--0 { height: 60px; }
+.reports-bar--1 { height: 98px; }
+.reports-bar--2 { height: 45px; }
+.reports-bar--3 { height: 128px; }
+.reports-bar--4 { height: 68px; }
+.reports-bar--5 { height: 135px; }
+.reports-bar--6 { height: 105px; }
+
+.reports-bar-label {
+  font-size: 10px;
+}
+
+.reports-row-gap {
+  margin-top: 24px;
+}
+
+.reports-hero {
+  background: linear-gradient(135deg, #1890ff 0%, #0050b3 100%);
+  color: #fff;
+}
+
+.reports-hero-icon {
+  font-size: 32px;
+  opacity: 0.8;
+  margin-bottom: 16px;
+}
+
+.reports-hero-label {
+  font-size: 14px;
+  font-weight: 500;
+  opacity: 0.9;
+}
+
+.reports-hero-value {
+  font-size: 36px;
+  font-weight: 700;
+  margin: 8px 0;
+}
+
+.reports-hero-subtitle {
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.reports-distribution {
+  margin-top: 24px;
+}
+
+.reports-distribution-col {
+  text-align: center;
+}
+
+.reports-distribution-col--border {
+  border-right: 1px solid #f0f0f0;
+}
+
+.reports-stat--blue .ant-statistic-content-value {
+  color: #1890ff;
+  font-weight: 700;
+}
+
+.reports-stat--purple .ant-statistic-content-value {
+  color: #722ed1;
+  font-weight: 700;
+}
+
+.reports-critical {
+  display: flex;
+  align-items: center;
+  margin-bottom: 16px;
+  color: #ff4d4f;
+}
+
+.reports-critical-icon {
+  margin-right: 8px;
+}
+
+.reports-critical-title {
+  margin: 0;
+  color: #ff4d4f;
+}
+
+.reports-critical-list {
+  width: 100%;
+}
+
+.reports-alert-desc {
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.reports-alert {
+  background: #fff1f0;
+  border-color: #ffa39e;
+}

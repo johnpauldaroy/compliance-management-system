@@ -1,0 +1,51 @@
+.myreq-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.myreq-title {
+  margin: 0;
+}
+
+.myreq-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.myreq-info {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.myreq-icon {
+  padding: 12px;
+  background: #e6f7ff;
+  border-radius: 8px;
+  color: #1890ff;
+  font-size: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.myreq-name {
+  font-size: 16px;
+  display: block;
+}
+
+.myreq-subtitle {
+  font-size: 14px;
+}
+
+.myreq-deadline {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #999;
+}
+
+.myreq-deadline-icon {
+  margin-right: 4px;
+}

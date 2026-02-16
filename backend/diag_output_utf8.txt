@@ -1,0 +1,43 @@
+﻿--- ROLES ---
+- Compliance & Admin Specialist
+- Person-In-Charge (PIC)
+- Super Admin
+
+--- USERS ---
+- admin@cms.com (Roles: Super Admin)
+- specialist@cms.com (Roles: Compliance & Admin Specialist)
+- pic1@cms.com (Roles: Person-In-Charge (PIC))
+
+--- AUDIT LOG COUNT ---
+1
+
+--- LATEST AUDIT LOG ---
+Array
+(
+    [id] => 4
+    [actor_user_id] => 1
+    [action] => TEST
+    [entity_type] => App\Models\User
+    [entity_id] => 1
+    [before_json] => 
+    [after_json] => Array
+        (
+            [description] => Test log
+        )
+
+    [ip_address] => 127.0.0.1
+    [user_agent] => tinker
+    [created_at] => 2026-01-17T03:32:14.000000Z
+    [actor] => Array
+        (
+            [id] => 1
+            [user_id] => SA001
+            [email] => admin@cms.com
+            [employee_name] => Super Admin
+            [branch] => Head Office
+            [email_verified_at] => 
+            [created_at] => 2026-01-13T01:39:36.000000Z
+            [updated_at] => 2026-01-13T01:39:36.000000Z
+        )
+
+)

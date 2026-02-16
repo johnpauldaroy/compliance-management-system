@@ -1,0 +1,12 @@
+.profile-page {
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.profile-card {
+  margin-top: 24px;
+}
+
+.profile-inline {
+  display: block;
+}

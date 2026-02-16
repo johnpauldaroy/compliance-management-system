@@ -1,0 +1,57 @@
+.reference-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.reference-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.reference-title {
+  margin: 0;
+}
+
+.reference-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.reference-section-header {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.reference-actions-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.reference-search {
+  width: 320px;
+  max-width: 100%;
+}
+
+.reference-search-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.reference-section-title {
+  margin: 0;
+}
+
+.reference-drawer-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}

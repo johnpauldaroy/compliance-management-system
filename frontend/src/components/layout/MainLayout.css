@@ -1,0 +1,128 @@
+.main-layout {
+  min-height: 100vh;
+}
+
+.main-layout__sider {
+  position: fixed;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  height: 100vh;
+  overflow: auto;
+}
+
+.main-layout__brand {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.main-layout__logo {
+  width: 120px;
+  height: auto;
+  display: block;
+}
+
+.main-layout__brand-text {
+  font-size: 16px;
+  font-weight: 700;
+  font-family: "Trebuchet MS", "Segoe UI", Arial, sans-serif;
+  color: #1b0385;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+
+.main-layout--collapsed .main-layout__logo {
+  width: 48px;
+}
+
+.main-layout--collapsed .main-layout__brand-text {
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.main-layout__divider {
+  border-top: 1px solid #d9d9d9;
+  margin: 0 16px 8px;
+}
+
+.main-layout__logout {
+  position: absolute;
+  bottom: 0;
+  width: 100%;
+  padding: 16px;
+  border-top: 1px solid #f0f0f0;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.main-layout__app {
+  margin-left: 256px;
+}
+
+.main-layout--collapsed .main-layout__app {
+  margin-left: 80px;
+}
+
+.main-layout__header {
+  background: #fff;
+  padding: 0 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  position: fixed;
+  top: 0;
+  left: 256px;
+  right: 0;
+  z-index: 10;
+  border-bottom: 1px solid #f0f0f0;
+  transform: translateY(0);
+  transition: transform 0.25s ease;
+}
+
+.main-layout--collapsed .main-layout__header {
+  left: 80px;
+}
+
+.main-layout__header--hidden {
+  transform: translateY(-100%);
+}
+
+.main-layout__header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.main-layout__greeting {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.2;
+}
+
+.main-layout__greeting-text {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.main-layout__avatar {
+  background-color: #1890ff;
+  cursor: pointer;
+}
+
+.main-layout__content {
+  margin: 88px 24px 24px;
+  padding: 24px;
+  background: #fff;
+  min-height: 280px;
+  transition: margin 0.25s ease;
+}
+
+.main-layout__content--compact {
+  margin: 24px;
+}

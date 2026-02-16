@@ -1,0 +1,74 @@
+.users-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.users-alert {
+  margin-bottom: 16px;
+}
+
+.users-header {
+  width: 100%;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.users-title-text {
+  margin-bottom: 0;
+}
+
+.users-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.users-toolbar-right {
+  margin-left: auto;
+}
+
+.users-search {
+  width: 260px;
+}
+
+.users-filter {
+  width: 220px;
+}
+
+.users-action {
+  color: inherit;
+}
+
+.users-action--info {
+  color: #1677ff;
+}
+
+.users-action--warning {
+  color: #faad14;
+}
+
+.users-action--success {
+  color: #52c41a;
+}
+
+.users-action--danger {
+  color: #f5222d;
+}
+
+.users-field-row {
+  display: flex;
+  gap: 12px;
+}
+
+.users-field {
+  flex: 1;
+}
+
+.users-drawer-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
