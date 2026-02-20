@@ -26,6 +26,12 @@ COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 # Set working directory
 WORKDIR /var/www
 
+COPY composer.json composer.lock ./
+
+RUN composer install --no-dev --optimize-autoloader
+
+COPY . .
+
 # Copy existing application directory contents
 COPY . /var/www
 
