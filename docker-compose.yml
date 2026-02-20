@@ -13,6 +13,8 @@ services:
     volumes:
       - ./backend:/var/www
       - ./backend/storage:/var/www/storage
+    expose:
+      - "8000"
     networks:
       - cms-network
     depends_on:

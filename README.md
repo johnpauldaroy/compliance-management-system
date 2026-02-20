@@ -66,6 +66,7 @@ Set these values in Dokploy before building:
   - `VITE_API_URL=https://<your-api-domain>/api`
 
 - Backend (`/backend`):
+  - `APP_URL=https://<your-api-domain>`
   - `CORS_ALLOWED_ORIGINS=https://<your-frontend-domain>`
   - `SANCTUM_STATEFUL_DOMAINS=<your-frontend-domain>`
   - `SESSION_DOMAIN=.your-domain.com`
@@ -74,10 +75,13 @@ Set these values in Dokploy before building:
 If your frontend is `https://compliance.example.com` and backend is `https://api.example.com`, values should look like:
 
 - Frontend build arg: `VITE_API_URL=https://api.example.com/api`
+- `APP_URL=https://api.example.com`
 - `CORS_ALLOWED_ORIGINS=https://compliance.example.com`
 - `SANCTUM_STATEFUL_DOMAINS=compliance.example.com`
 - `SESSION_DOMAIN=.example.com`
 - `SESSION_SECURE_COOKIE=true`
+
+Backend container now serves HTTP on port `8000` (`php artisan serve`). In Dokploy, ensure the backend service HTTP port is `8000`.
 
 ## License
 MIT
