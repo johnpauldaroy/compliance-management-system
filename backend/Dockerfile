@@ -11,38 +11,30 @@ RUN apt-get update && apt-get install -y \
     unzip \
     libzip-dev \
     libjpeg-dev \
-    libfreetype6-dev
-
-# Clear cache
-RUN apt-get clean && rm -rf /var/lib/apt/lists/*
+    libfreetype6-dev \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Install PHP extensions
 RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
     && docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd zip
 
-# Get latest Composer
-COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
+# Install Composer
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
 # Set working directory
 WORKDIR /var/www
 
-COPY composer.json composer.lock ./
-
-RUN composer install --no-dev --optimize-autoloader
-
+# Copy all files
 COPY . .
 
-# Copy existing application directory contents
-COPY . /var/www
+# Install dependencies
+RUN composer install --no-dev --optimize-autoloader
 
-# Copy existing application directory permissions
-COPY --chown=www-data:www-data . /var/www
+# Set permissions
+RUN chown -R www-data:www-data /var/www \
+    && chmod -R 775 storage bootstrap/cache
 
-# Change current user to www
-USER root
-RUN chown -R www-data:www-data /var/www
 USER www-data
 
-# Expose port 9000 and start php-fpm server
 EXPOSE 9000
 CMD ["php-fpm"]
