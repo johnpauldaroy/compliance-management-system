@@ -18,7 +18,7 @@ class UserSeeder extends Seeder
             'branch' => 'Head Office',
             'user_type' => 'Super Admin',
             'is_active' => true,
-            'password' => '12345678',
+            'password' => Hash::make('12345678'),
         ]);
         $superAdmin->assignRole('Super Admin');
 
@@ -31,7 +31,7 @@ class UserSeeder extends Seeder
             'branch' => 'Head Office',
             'user_type' => 'Compliance & Admin Specialist',
             'is_active' => true,
-            'password' => '12345678',
+            'password' => Hash::make('12345678'),
         ]);
         $admin->assignRole('Compliance & Admin Specialist');
 
@@ -44,7 +44,7 @@ class UserSeeder extends Seeder
             'branch' => 'Branch A',
             'user_type' => 'Person-in-Charge',
             'is_active' => true,
-            'password' => '12345678',
+            'password' => Hash::make('12345678'),
         ]);
         $pic->assignRole('Person-In-Charge (PIC)');
     }
