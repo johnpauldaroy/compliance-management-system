@@ -1,11 +1,93 @@
-import { Table, Button, Space, Form, Input, message, Typography, Modal, Tabs, Tag, Tooltip } from 'antd';
-import { PlusOutlined, EditOutlined, ReloadOutlined, PoweroffOutlined, CheckCircleOutlined } from '@ant-design/icons';
+import { Table, Button, Space, Form, Input, Upload, message, Typography, Modal, Tabs, Tag, Tooltip } from 'antd';
+import { PlusOutlined, EditOutlined, ReloadOutlined, PoweroffOutlined, CheckCircleOutlined, UploadOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { agencyService, branchUnitDepartmentService, positionService } from '../services/apiService';
 import type { Agency, BranchUnitDepartment, Position } from '../types';
 import './AgenciesPage.css';
+
+type SpreadsheetRow = Record<string, string>;
+
+const normalizeHeader = (value: unknown) =>
+    String(value ?? '')
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, '_');
+
+const normalizeCell = (value: unknown) => String(value ?? '').trim();
+
+const parseCsvLine = (line: string) => {
+    const cells: string[] = [];
+    let current = '';
+    let inQuotes = false;
+
+    for (let i = 0; i < line.length; i += 1) {
+        const char = line[i];
+        const next = line[i + 1];
+
+        if (char === '"' && inQuotes && next === '"') {
+            current += '"';
+            i += 1;
+            continue;
+        }
+
+        if (char === '"') {
+            inQuotes = !inQuotes;
+            continue;
+        }
+
+        if (char === ',' && !inQuotes) {
+            cells.push(current);
+            current = '';
+            continue;
+        }
+
+        current += char;
+    }
+
+    cells.push(current);
+    return cells.map((cell) => normalizeCell(cell));
+};
+
+const readSpreadsheetRows = async (file: File): Promise<SpreadsheetRow[]> => {
+    const text = await file.text();
+    const lines = text
+        .replace(/^\uFEFF/, '')
+        .split(/\r?\n/)
+        .filter((line) => line.trim().length > 0);
+
+    if (!lines.length) {
+        return [];
+    }
+
+    const headers = parseCsvLine(lines[0]).map((header) => normalizeHeader(header));
+
+    return lines
+        .slice(1)
+        .map((line) => {
+            const cells = parseCsvLine(line);
+            const row: SpreadsheetRow = {};
+            headers.forEach((header, index) => {
+                if (!header) {
+                    return;
+                }
+                row[header] = normalizeCell(cells[index]);
+            });
+            return row;
+        })
+        .filter((row) => Object.values(row).some((value) => value.length > 0));
+};
+
+const pickCell = (row: SpreadsheetRow, keys: string[]) => {
+    for (const key of keys) {
+        const value = row[key];
+        if (value) {
+            return value;
+        }
+    }
+    return '';
+};
 
 const ReferenceDataPage = () => {
     const [agencyForm] = Form.useForm<{ agency_id: string; name: string }>();
@@ -20,6 +102,9 @@ const ReferenceDataPage = () => {
     const [agencySearch, setAgencySearch] = useState('');
     const [unitSearch, setUnitSearch] = useState('');
     const [positionSearch, setPositionSearch] = useState('');
+    const [isAgencyImporting, setIsAgencyImporting] = useState(false);
+    const [isUnitImporting, setIsUnitImporting] = useState(false);
+    const [isPositionImporting, setIsPositionImporting] = useState(false);
 
     const { data: agencies, isLoading: isAgenciesLoading, refetch: refetchAgencies } = useQuery<Agency[]>({
         queryKey: ['agencies'],
@@ -249,6 +334,181 @@ const ReferenceDataPage = () => {
         });
     };
 
+    const handleAgencyImport = async (file: File) => {
+        const key = 'reference-import-agency';
+        setIsAgencyImporting(true);
+        message.loading({ content: 'Importing agencies...', key, duration: 0 });
+        try {
+            const rows = await readSpreadsheetRows(file);
+            if (!rows.length) {
+                message.error({ content: 'No rows found in CSV.', key });
+                return false;
+            }
+
+            let created = 0;
+            let failed = 0;
+            let firstError = '';
+
+            for (let index = 0; index < rows.length; index += 1) {
+                const row = rows[index];
+                const rowNumber = index + 2;
+                const agencyId = pickCell(row, ['agency_id', 'agencyid', 'agency_code', 'id', 'code']).toUpperCase();
+                const name = pickCell(row, ['name', 'agency_name', 'agency']);
+
+                if (!agencyId || !name) {
+                    failed += 1;
+                    if (!firstError) {
+                        firstError = `Row ${rowNumber}: agency_id and name are required.`;
+                    }
+                    continue;
+                }
+
+                try {
+                    await agencyService.create({ agency_id: agencyId, name });
+                    created += 1;
+                } catch (error: any) {
+                    failed += 1;
+                    if (!firstError) {
+                        firstError = `Row ${rowNumber}: ${error.response?.data?.message || 'Failed to create agency.'}`;
+                    }
+                }
+            }
+
+            await refetchAgencies();
+
+            if (failed > 0) {
+                message.warning({
+                    content: `Imported ${created} row(s), ${failed} failed. ${firstError ? `First error: ${firstError}` : ''}`.trim(),
+                    key,
+                    duration: 5,
+                });
+            } else {
+                message.success({ content: `Imported ${created} agency row(s).`, key });
+            }
+        } catch {
+            message.error({ content: 'Failed to parse CSV file.', key });
+        } finally {
+            setIsAgencyImporting(false);
+        }
+        return false;
+    };
+
+    const handleUnitImport = async (file: File) => {
+        const key = 'reference-import-unit';
+        setIsUnitImporting(true);
+        message.loading({ content: 'Importing branch/unit/department...', key, duration: 0 });
+        try {
+            const rows = await readSpreadsheetRows(file);
+            if (!rows.length) {
+                message.error({ content: 'No rows found in CSV.', key });
+                return false;
+            }
+
+            let created = 0;
+            let failed = 0;
+            let firstError = '';
+
+            for (let index = 0; index < rows.length; index += 1) {
+                const row = rows[index];
+                const rowNumber = index + 2;
+                const name = pickCell(row, ['name', 'branch_unit_department', 'branch_unit', 'department', 'branch']);
+
+                if (!name) {
+                    failed += 1;
+                    if (!firstError) {
+                        firstError = `Row ${rowNumber}: name is required.`;
+                    }
+                    continue;
+                }
+
+                try {
+                    await branchUnitDepartmentService.create({ name });
+                    created += 1;
+                } catch (error: any) {
+                    failed += 1;
+                    if (!firstError) {
+                        firstError = `Row ${rowNumber}: ${error.response?.data?.message || 'Failed to create record.'}`;
+                    }
+                }
+            }
+
+            await refetchUnits();
+
+            if (failed > 0) {
+                message.warning({
+                    content: `Imported ${created} row(s), ${failed} failed. ${firstError ? `First error: ${firstError}` : ''}`.trim(),
+                    key,
+                    duration: 5,
+                });
+            } else {
+                message.success({ content: `Imported ${created} branch/unit/department row(s).`, key });
+            }
+        } catch {
+            message.error({ content: 'Failed to parse CSV file.', key });
+        } finally {
+            setIsUnitImporting(false);
+        }
+        return false;
+    };
+
+    const handlePositionImport = async (file: File) => {
+        const key = 'reference-import-position';
+        setIsPositionImporting(true);
+        message.loading({ content: 'Importing positions...', key, duration: 0 });
+        try {
+            const rows = await readSpreadsheetRows(file);
+            if (!rows.length) {
+                message.error({ content: 'No rows found in CSV.', key });
+                return false;
+            }
+
+            let created = 0;
+            let failed = 0;
+            let firstError = '';
+
+            for (let index = 0; index < rows.length; index += 1) {
+                const row = rows[index];
+                const rowNumber = index + 2;
+                const name = pickCell(row, ['name', 'position', 'position_name']);
+
+                if (!name) {
+                    failed += 1;
+                    if (!firstError) {
+                        firstError = `Row ${rowNumber}: name is required.`;
+                    }
+                    continue;
+                }
+
+                try {
+                    await positionService.create({ name });
+                    created += 1;
+                } catch (error: any) {
+                    failed += 1;
+                    if (!firstError) {
+                        firstError = `Row ${rowNumber}: ${error.response?.data?.message || 'Failed to create position.'}`;
+                    }
+                }
+            }
+
+            await refetchPositions();
+
+            if (failed > 0) {
+                message.warning({
+                    content: `Imported ${created} row(s), ${failed} failed. ${firstError ? `First error: ${firstError}` : ''}`.trim(),
+                    key,
+                    duration: 5,
+                });
+            } else {
+                message.success({ content: `Imported ${created} position row(s).`, key });
+            }
+        } catch {
+            message.error({ content: 'Failed to parse CSV file.', key });
+        } finally {
+            setIsPositionImporting(false);
+        }
+        return false;
+    };
+
     const agencyColumns: ColumnsType<Agency> = [
         { title: 'Agency ID', dataIndex: 'agency_id', key: 'agency_id' },
         { title: 'Name', dataIndex: 'name', key: 'name' },
@@ -429,7 +689,25 @@ const ReferenceDataPage = () => {
                                                 onClick={() => refetchAgencies()}
                                             />
                                         </div>
-                                        <Button type="primary" icon={<PlusOutlined />} onClick={handleAgencyAdd}>Add Agency</Button>
+                                        <Space>
+                                            <Upload
+                                                accept=".csv"
+                                                showUploadList={false}
+                                                beforeUpload={(file) => {
+                                                    if (!file.name.toLowerCase().endsWith('.csv')) {
+                                                        message.error('Please upload a CSV file.');
+                                                        return Upload.LIST_IGNORE;
+                                                    }
+                                                    void handleAgencyImport(file);
+                                                    return false;
+                                                }}
+                                            >
+                                                <Button icon={<UploadOutlined />} loading={isAgencyImporting}>
+                                                    Import CSV
+                                                </Button>
+                                            </Upload>
+                                            <Button type="primary" icon={<PlusOutlined />} onClick={handleAgencyAdd}>Add Agency</Button>
+                                        </Space>
                                     </div>
                                 </div>
                                 <Table
@@ -464,9 +742,27 @@ const ReferenceDataPage = () => {
                                                 onClick={() => refetchUnits()}
                                             />
                                         </div>
-                                        <Button type="primary" icon={<PlusOutlined />} onClick={handleUnitAdd}>
-                                            Add Branch/Unit/Department
-                                        </Button>
+                                        <Space>
+                                            <Upload
+                                                accept=".csv"
+                                                showUploadList={false}
+                                                beforeUpload={(file) => {
+                                                    if (!file.name.toLowerCase().endsWith('.csv')) {
+                                                        message.error('Please upload a CSV file.');
+                                                        return Upload.LIST_IGNORE;
+                                                    }
+                                                    void handleUnitImport(file);
+                                                    return false;
+                                                }}
+                                            >
+                                                <Button icon={<UploadOutlined />} loading={isUnitImporting}>
+                                                    Import CSV
+                                                </Button>
+                                            </Upload>
+                                            <Button type="primary" icon={<PlusOutlined />} onClick={handleUnitAdd}>
+                                                Add Branch/Unit/Department
+                                            </Button>
+                                        </Space>
                                     </div>
                                 </div>
                                 <Table
@@ -501,9 +797,27 @@ const ReferenceDataPage = () => {
                                                 onClick={() => refetchPositions()}
                                             />
                                         </div>
-                                        <Button type="primary" icon={<PlusOutlined />} onClick={handlePositionAdd}>
-                                            Add Position
-                                        </Button>
+                                        <Space>
+                                            <Upload
+                                                accept=".csv"
+                                                showUploadList={false}
+                                                beforeUpload={(file) => {
+                                                    if (!file.name.toLowerCase().endsWith('.csv')) {
+                                                        message.error('Please upload a CSV file.');
+                                                        return Upload.LIST_IGNORE;
+                                                    }
+                                                    void handlePositionImport(file);
+                                                    return false;
+                                                }}
+                                            >
+                                                <Button icon={<UploadOutlined />} loading={isPositionImporting}>
+                                                    Import CSV
+                                                </Button>
+                                            </Upload>
+                                            <Button type="primary" icon={<PlusOutlined />} onClick={handlePositionAdd}>
+                                                Add Position
+                                            </Button>
+                                        </Space>
                                     </div>
                                 </div>
                                 <Table
