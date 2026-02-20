@@ -21,6 +21,28 @@ services:
       - db
       - redis
 
+  # Laravel Scheduler (runs reminder notifications)
+  scheduler:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: cms-scheduler
+    restart: unless-stopped
+    tty: true
+    command: php artisan schedule:work
+    environment:
+      SERVICE_NAME: scheduler
+      SERVICE_TAGS: dev
+    volumes:
+      - ./backend:/var/www
+      - ./backend/storage:/var/www/storage
+    networks:
+      - cms-network
+    depends_on:
+      - backend
+      - db
+      - redis
+
   # React Application (Frontend)
   frontend:
     build:

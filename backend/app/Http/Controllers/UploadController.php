@@ -114,7 +114,9 @@ class UploadController extends Controller
             }
 
             if ($approvalStatus === 'PENDING') {
-                $this->notifySpecialistsPendingReview($upload);
+                DB::afterCommit(function () use ($upload) {
+                    $this->notifySpecialistsPendingReview($upload);
+                });
             }
 
             return response()->json($upload, 211);
@@ -200,7 +202,9 @@ class UploadController extends Controller
                 ]);
             }
 
-            $this->notifySubmissionStatus($upload);
+            DB::afterCommit(function () use ($upload) {
+                $this->notifySubmissionStatus($upload);
+            });
 
             return response()->json($upload);
         });
@@ -224,7 +228,9 @@ class UploadController extends Controller
                 ]);
             }
 
-            $this->notifySubmissionStatus($upload);
+            DB::afterCommit(function () use ($upload) {
+                $this->notifySubmissionStatus($upload);
+            });
 
             return response()->json($upload);
         });
@@ -263,7 +269,15 @@ class UploadController extends Controller
             return;
         }
 
-        Mail::to($specialistEmails)->send(new SubmissionPendingReviewMail($upload));
+        try {
+            Mail::to($specialistEmails)->send(new SubmissionPendingReviewMail($upload));
+        } catch (\Throwable $e) {
+            \Log::error('Failed to send pending review email', [
+                'upload_id' => $upload->id,
+                'emails' => $specialistEmails,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     private function notifySubmissionStatus(Upload $upload): void
@@ -278,6 +292,15 @@ class UploadController extends Controller
             return;
         }
 
-        Mail::to($recipientEmail)->send(new SubmissionStatusMail($upload));
+        try {
+            Mail::to($recipientEmail)->send(new SubmissionStatusMail($upload));
+        } catch (\Throwable $e) {
+            \Log::error('Failed to send submission status email', [
+                'upload_id' => $upload->id,
+                'email' => $recipientEmail,
+                'status' => $upload->approval_status,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 }

@@ -230,7 +230,9 @@ class RequirementController extends Controller
                 ]);
             }
 
-            $this->notifyAssignmentsDeadline($assignments, 'assigned');
+            DB::afterCommit(function () use ($assignments) {
+                $this->notifyAssignmentsDeadline($assignments, 'assigned');
+            });
 
             return response()->json($requirement, 211);
         });
@@ -313,9 +315,13 @@ class RequirementController extends Controller
 
             if ($deadlineChanged) {
                 $allAssignments = $requirement->assignments()->with('user', 'requirement')->get();
-                $this->notifyAssignmentsDeadline($allAssignments, 'updated');
+                DB::afterCommit(function () use ($allAssignments) {
+                    $this->notifyAssignmentsDeadline($allAssignments, 'updated');
+                });
             } elseif (!empty($newAssignments)) {
-                $this->notifyAssignmentsDeadline($newAssignments, 'assigned');
+                DB::afterCommit(function () use ($newAssignments) {
+                    $this->notifyAssignmentsDeadline($newAssignments, 'assigned');
+                });
             }
 
             return response()->json($requirement);

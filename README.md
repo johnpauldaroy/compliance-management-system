@@ -27,6 +27,17 @@ To get the entire system up and running using Docker:
      DB_USERNAME=cms_user
      DB_PASSWORD=password
      ```
+   - Configure SMTP in `backend/.env` so notification emails can be delivered:
+     ```env
+     MAIL_MAILER=smtp
+     MAIL_SCHEME=null
+     MAIL_HOST=smtp.gmail.com
+     MAIL_PORT=587
+     MAIL_USERNAME=your-email@gmail.com
+     MAIL_PASSWORD=your-app-password
+     MAIL_FROM_ADDRESS="your-email@gmail.com"
+     MAIL_FROM_NAME="Compliance Management System"
+     ```
    - Copy `frontend/.env.example` to `frontend/.env` (if it exists) and set the API URL:
      ```env
      VITE_API_URL=http://localhost:8001/api
@@ -57,6 +68,19 @@ To get the entire system up and running using Docker:
 ### Frontend
 - The frontend is a React application located in the `/frontend` directory.
 - It is served via Nginx in the Docker setup, but can be run locally using `npm run dev` in the `/frontend` folder.
+
+## Email Notifications
+
+- Immediate emails (submission pending review, approved, rejected, requirement assignment) are sent by API requests.
+- Reminder emails (`D-30`, `D-14`, `D-7`, `D-1`) are sent by the Laravel scheduler. The `scheduler` service in `docker-compose.yml` now runs `php artisan schedule:work`.
+- To verify SMTP config and send a test email:
+  ```bash
+  docker compose exec backend php artisan notifications:test-email your-email@example.com
+  ```
+- If reminders are not firing, check scheduler logs:
+  ```bash
+  docker compose logs scheduler --tail=100
+  ```
 
 ## Dokploy Deployment Notes
 

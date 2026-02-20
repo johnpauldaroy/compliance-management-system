@@ -31,8 +31,18 @@ class SendComplianceReminders extends Command
                     continue;
                 }
 
-                Mail::to($pic->email)->send(new ComplianceReminderMail($assignment, $offset));
-                $this->info("Reminder (D-{$offset}) sent to {$pic->email} for {$assignment->requirement?->requirement}");
+                try {
+                    Mail::to($pic->email)->send(new ComplianceReminderMail($assignment, $offset));
+                    $this->info("Reminder (D-{$offset}) sent to {$pic->email} for {$assignment->requirement?->requirement}");
+                } catch (\Throwable $e) {
+                    \Log::error('Failed to send compliance reminder email', [
+                        'assignment_id' => $assignment->id,
+                        'email' => $pic->email,
+                        'offset_days' => $offset,
+                        'error' => $e->getMessage(),
+                    ]);
+                    $this->error("Reminder (D-{$offset}) failed for {$pic->email}: {$e->getMessage()}");
+                }
             }
         }
 
