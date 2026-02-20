@@ -2,11 +2,14 @@
 FROM node:20-alpine as build-stage
 
 WORKDIR /app
+ARG VITE_API_URL
+ENV VITE_API_URL=${VITE_API_URL}
 
 COPY package*.json ./
 RUN npm install
 
 COPY . .
+RUN test -n "$VITE_API_URL" || (echo "VITE_API_URL build arg is required" && exit 1)
 RUN npm run build
 
 # Stage 2: Production

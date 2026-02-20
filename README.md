@@ -60,9 +60,9 @@ To get the entire system up and running using Docker:
 
 ## Dokploy Deployment Notes
 
-Set these environment variables in Dokploy before building:
+Set these values in Dokploy before building:
 
-- Frontend (`/frontend`):
+- Frontend build args (`/frontend`):
   - `VITE_API_URL=https://<your-api-domain>/api`
 
 - Backend (`/backend`):
@@ -73,7 +73,7 @@ Set these environment variables in Dokploy before building:
 
 If your frontend is `https://compliance.example.com` and backend is `https://api.example.com`, values should look like:
 
-- `VITE_API_URL=https://api.example.com/api`
+- Frontend build arg: `VITE_API_URL=https://api.example.com/api`
 - `CORS_ALLOWED_ORIGINS=https://compliance.example.com`
 - `SANCTUM_STATEFUL_DOMAINS=compliance.example.com`
 - `SESSION_DOMAIN=.example.com`

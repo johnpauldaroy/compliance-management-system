@@ -24,6 +24,8 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:8001/api}
     container_name: cms-frontend
     restart: unless-stopped
     networks:
