@@ -29,7 +29,7 @@ To get the entire system up and running using Docker:
      ```
    - Copy `frontend/.env.example` to `frontend/.env` (if it exists) and set the API URL:
      ```env
-     VITE_API_URL=http://localhost/api
+     VITE_API_URL=http://localhost:8001/api
      ```
 
 3. **Build and Run the Containers:**
@@ -57,6 +57,27 @@ To get the entire system up and running using Docker:
 ### Frontend
 - The frontend is a React application located in the `/frontend` directory.
 - It is served via Nginx in the Docker setup, but can be run locally using `npm run dev` in the `/frontend` folder.
+
+## Dokploy Deployment Notes
+
+Set these environment variables in Dokploy before building:
+
+- Frontend (`/frontend`):
+  - `VITE_API_URL=https://<your-api-domain>/api`
+
+- Backend (`/backend`):
+  - `CORS_ALLOWED_ORIGINS=https://<your-frontend-domain>`
+  - `SANCTUM_STATEFUL_DOMAINS=<your-frontend-domain>`
+  - `SESSION_DOMAIN=.your-domain.com`
+  - `SESSION_SECURE_COOKIE=true`
+
+If your frontend is `https://compliance.example.com` and backend is `https://api.example.com`, values should look like:
+
+- `VITE_API_URL=https://api.example.com/api`
+- `CORS_ALLOWED_ORIGINS=https://compliance.example.com`
+- `SANCTUM_STATEFUL_DOMAINS=compliance.example.com`
+- `SESSION_DOMAIN=.example.com`
+- `SESSION_SECURE_COOKIE=true`
 
 ## License
 MIT

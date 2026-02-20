@@ -1,4 +1,4 @@
-import api from '../lib/api';
+import api, { API_ROOT_URL } from '../lib/api';
 import type { Agency, BranchUnitDepartment, PaginatedResponse, Position, Requirement, Upload, User } from '../types';
 
 const getCookie = (name: string) => {
@@ -15,7 +15,7 @@ const getCsrfHeaders = () => {
     return xsrfToken ? { 'X-XSRF-TOKEN': xsrfToken } : undefined;
 };
 
-const getRootUrl = () => api.defaults.baseURL?.replace('/api', '') || window.location.origin;
+const getRootUrl = () => API_ROOT_URL;
 
 export const agencyService = {
     getAll: async (params?: { active_only?: boolean }) =>

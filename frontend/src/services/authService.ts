@@ -1,4 +1,4 @@
-import api from '../lib/api';
+import api, { API_ROOT_URL } from '../lib/api';
 import type { User } from '../types';
 
 const getCookie = (name: string) => {
@@ -17,7 +17,7 @@ const getCsrfHeaders = () => {
 
 export const authService = {
     login: async (credentials: { email: string; password: string }) => {
-        const rootUrl = api.defaults.baseURL?.replace('/api', '') || 'http://localhost:8001';
+        const rootUrl = API_ROOT_URL;
         await api.get('/sanctum/csrf-cookie', { baseURL: rootUrl });
         const response = await api.post('/login', credentials, {
             baseURL: rootUrl,
@@ -26,7 +26,7 @@ export const authService = {
         return response.data;
     },
     logout: async () => {
-        const rootUrl = api.defaults.baseURL?.replace('/api', '') || 'http://localhost:8001';
+        const rootUrl = API_ROOT_URL;
         await api.get('/sanctum/csrf-cookie', { baseURL: rootUrl });
         await api.post('/logout', {}, { baseURL: rootUrl, headers: getCsrfHeaders() });
     },
@@ -35,4 +35,3 @@ export const authService = {
         return response.data;
     },
 };
-
