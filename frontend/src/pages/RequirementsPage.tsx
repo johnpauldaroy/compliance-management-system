@@ -1,15 +1,52 @@
-import { Table, Button, Tag, Drawer, Form, Input, Select, Space, message, Typography, Row, Col, Upload, Tooltip, Descriptions, Modal, Collapse } from 'antd';
+import { Table, Button, Tag, Drawer, Form, Input, Select, Space, message, Typography, Row, Col, Upload, Tooltip, Descriptions, Modal, Collapse, DatePicker } from 'antd';
 import { PlusOutlined, InfoCircleOutlined, EditOutlined, DeleteOutlined, UploadOutlined, ReloadOutlined } from '@ant-design/icons';
 import { keepPreviousData, useMutation, useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
+import dayjs from 'dayjs';
 import type { SortOrder } from 'antd/es/table/interface';
 import { useLocation } from 'react-router-dom';
 import { agencyService, branchUnitDepartmentService, positionService, requirementService, uploadService, userService } from '../services/apiService';
+import { authService } from '../services/authService';
 import type { ColumnsType } from 'antd/es/table';
-import type { Agency, BranchUnitDepartment, PaginatedResponse, Position, Requirement, User } from '../types';
+import type { Agency, BranchUnitDepartment, PaginatedResponse, Position, Requirement, Upload as UploadRecord, User } from '../types';
 import './RequirementsPage.css';
 
 const { Text } = Typography;
+
+const formatPhDate = (value?: string | null) => {
+    if (!value) {
+        return 'N/A';
+    }
+    const date = value.includes('T')
+        ? new Date(value)
+        : new Date(`${value}T00:00:00+08:00`);
+    return new Intl.DateTimeFormat('en-US', {
+        timeZone: 'Asia/Manila',
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+    }).format(date);
+};
+
+const toPhDateKey = (value?: string | null) => {
+    if (!value) {
+        return '';
+    }
+    const date = value.includes('T')
+        ? new Date(value)
+        : new Date(`${value}T00:00:00+08:00`);
+    if (Number.isNaN(date.getTime())) {
+        return '';
+    }
+    const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Manila',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+    }).formatToParts(date);
+    const map = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    return `${map.year}-${map.month}-${map.day}`;
+};
 
 const toIdList = (value?: string | null) =>
     value
@@ -74,6 +111,7 @@ type RequirementPayload = {
 const RequirementsPage = () => {
     const location = useLocation();
     const [form] = Form.useForm<RequirementFormValues>();
+    const [uploadForm] = Form.useForm();
     const [isDrawerOpen, setIsDrawerOpen] = useState(false);
     const [editingRequirement, setEditingRequirement] = useState<Requirement | null>(null);
     const [detailId, setDetailId] = useState<number | null>(null);
@@ -84,6 +122,10 @@ const RequirementsPage = () => {
 
     const [currentPage, setCurrentPage] = useState(1);
     const [pageSize, setPageSize] = useState(25);
+    const [uploadModalOpen, setUploadModalOpen] = useState(false);
+    const [uploadRequirementId, setUploadRequirementId] = useState<number | null>(null);
+    const [uploadFile, setUploadFile] = useState<File | null>(null);
+    const [isUploading, setIsUploading] = useState(false);
 
     const todayDate = useMemo(() => new Date().toISOString().split('T')[0], []);
 
@@ -155,11 +197,23 @@ const RequirementsPage = () => {
         queryFn: userService.getAll,
     });
 
-    const { data: detailData, isLoading: isDetailLoading } = useQuery<Requirement>({
+    const { data: detailData, isLoading: isDetailLoading, refetch: refetchDetails } = useQuery<Requirement>({
         queryKey: ['requirement', detailId],
         queryFn: () => requirementService.show(detailId as number),
         enabled: Boolean(detailId),
     });
+
+    const { data: meData } = useQuery<{ user: User }>({
+        queryKey: ['me'],
+        queryFn: () => authService.me(),
+    });
+
+    const isAdmin = useMemo(() => {
+        const roles = meData?.user?.roles || [];
+        return roles.some((role: any) =>
+            role?.name === 'Compliance & Admin Specialist' || role?.name === 'Super Admin'
+        );
+    }, [meData]);
 
     const handleViewUpload = async (uploadId: number) => {
         try {
@@ -730,7 +784,7 @@ const RequirementsPage = () => {
                                 {detailData?.schedule || 'N/A'}
                             </Descriptions.Item>
                             <Descriptions.Item label="Deadline">
-                                {detailData?.deadline || 'N/A'}
+                                {formatPhDate(detailData?.deadline)}
                             </Descriptions.Item>
                             <Descriptions.Item label="Overall Compliance Status" span={2}>
                                 <Tag color={
@@ -743,21 +797,61 @@ const RequirementsPage = () => {
                         </Descriptions>
                         <div style={{ marginTop: 24 }}>
                             <Typography.Title level={5}>Uploads</Typography.Title>
+                            {isAdmin ? (
+                                <Button
+                                    type="primary"
+                                    icon={<UploadOutlined />}
+                                    onClick={() => {
+                                        if (detailData?.id) {
+                                            setUploadRequirementId(detailData.id);
+                                        } else {
+                                            setUploadRequirementId(null);
+                                        }
+                                        setUploadFile(null);
+                                        uploadForm.resetFields();
+                                        if (detailData?.deadline) {
+                                            uploadForm.setFieldsValue({ deadline_at_upload: dayjs(`${detailData.deadline}T00:00:00+08:00`) });
+                                        }
+                                        setUploadModalOpen(true);
+                                    }}
+                                    style={{ marginBottom: 12 }}
+                                >
+                                    Upload
+                                </Button>
+                            ) : null}
                             {detailData?.uploads && detailData.uploads.length > 0 ? (
-                                <Collapse
-                                    items={[
-                                        {
-                                            key: detailData.deadline || 'no-deadline',
-                                            label: `Deadline: ${detailData.deadline || 'No deadline'}`,
+                                (() => {
+                                    const grouped = detailData.uploads.reduce<Record<string, UploadRecord[]>>((acc, upload) => {
+                                        const key = upload.deadline_at_upload ? toPhDateKey(upload.deadline_at_upload) : 'no-deadline';
+                                        acc[key] = acc[key] || [];
+                                        acc[key].push(upload);
+                                        return acc;
+                                    }, {});
+                                    const items = Object.entries(grouped)
+                                        .sort(([aKey], [bKey]) => {
+                                            if (aKey === 'no-deadline') return 1;
+                                            if (bKey === 'no-deadline') return -1;
+                                            return bKey.localeCompare(aKey);
+                                        })
+                                        .map(([key, items]) => {
+                                        const label = key === 'no-deadline'
+                                            ? 'Deadline: No deadline'
+                                            : `Deadline: ${formatPhDate(key)}`;
+                                        return {
+                                            key,
+                                            label,
                                             children: (
                                                 <Collapse
-                                                    items={detailData.uploads.map((upload) => ({
+                                                    items={items.map((upload) => ({
                                                         key: String(upload.id),
                                                         label: `${upload.upload_id} - ${upload.uploader?.employee_name || upload.uploader_email || 'Unknown'}`,
                                                         children: (
                                                             <Space direction="vertical" size={8} style={{ width: '100%' }}>
                                                                 <div>Uploaded by: {upload.uploader?.employee_name || upload.uploader_email}</div>
                                                                 <div>Uploaded at: {upload.upload_date ? new Date(upload.upload_date).toLocaleString() : 'N/A'}</div>
+                                                                {upload.deadline_at_upload ? (
+                                                                    <div>Deadline (upload): {formatPhDate(upload.deadline_at_upload)}</div>
+                                                                ) : null}
                                                                 {upload.approval_status !== 'PENDING' ? (
                                                                     <div>
                                                                         {upload.approval_status === 'APPROVED' ? 'Approved' : 'Rejected'} at:{' '}
@@ -777,16 +871,107 @@ const RequirementsPage = () => {
                                                     }))}
                                                 />
                                             ),
-                                        },
-                                    ]}
-                                />
+                                        };
+                                        });
+                                    return <Collapse items={items} />;
+                                })()
                             ) : (
-                                <Text type="secondary">No uploads yet.</Text>
+                                <div style={{ textAlign: 'center', marginTop: 8 }}>
+                                    <Text type="secondary">No uploads yet.</Text>
+                                </div>
                             )}
                         </div>
                     </>
                 )}
             </Drawer>
+            <Modal
+                title="Upload Requirement File"
+                open={uploadModalOpen}
+                onCancel={() => setUploadModalOpen(false)}
+                onOk={() => uploadForm.submit()}
+                okText="Submit"
+                okButtonProps={{ disabled: isUploading }}
+                confirmLoading={isUploading}
+                destroyOnClose
+            >
+                <Form
+                    form={uploadForm}
+                    layout="vertical"
+                    onFinish={(values) => {
+                        if (!uploadRequirementId) {
+                            message.error('No requirement selected.');
+                            return;
+                        }
+                        if (!uploadFile) {
+                            message.error('Please select a file to upload.');
+                            return;
+                        }
+                        const formData = new FormData();
+                        formData.append('requirement_id', String(uploadRequirementId));
+                        formData.append('doc_file', uploadFile);
+                        if (values.comments) {
+                            formData.append('comments', values.comments);
+                        }
+                        if (values.deadline_at_upload) {
+                            formData.append('deadline_at_upload', values.deadline_at_upload.format('YYYY-MM-DD'));
+                        }
+                        if (values.approval_status) {
+                            formData.append('approval_status', values.approval_status);
+                        }
+                        if (values.admin_remarks) {
+                            formData.append('admin_remarks', values.admin_remarks);
+                        }
+                        setIsUploading(true);
+                        uploadService.upload(formData)
+                            .then(() => {
+                                message.success('File uploaded.');
+                                setUploadModalOpen(false);
+                                refetchDetails();
+                            })
+                            .catch((error: any) => {
+                                message.error(error.response?.data?.message || 'Failed to upload file.');
+                            })
+                            .finally(() => {
+                                setIsUploading(false);
+                            });
+                    }}
+                >
+                    <Form.Item label="Document File" required>
+                        <Upload
+                            accept="application/pdf,.pdf"
+                            beforeUpload={(file) => {
+                                if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+                                    message.error('Only PDF files are allowed.');
+                                    return Upload.LIST_IGNORE;
+                                }
+                                setUploadFile(file);
+                                return false;
+                            }}
+                            maxCount={1}
+                        >
+                            <Button icon={<UploadOutlined />} disabled={isUploading}>Select File</Button>
+                        </Upload>
+                    </Form.Item>
+                    <Form.Item label="Comments" name="comments">
+                        <Input.TextArea rows={3} />
+                    </Form.Item>
+                    <Form.Item label="Approval Status" name="approval_status">
+                        <Select
+                            options={[
+                                { value: 'PENDING', label: 'PENDING' },
+                                { value: 'APPROVED', label: 'APPROVED' },
+                                { value: 'REJECTED', label: 'REJECTED' },
+                            ]}
+                        />
+                    </Form.Item>
+                    <Form.Item label="Deadline for this upload" name="deadline_at_upload">
+                        <DatePicker style={{ width: '100%' }} />
+                    </Form.Item>
+                    <Form.Item label="Admin Remarks" name="admin_remarks">
+                        <Input.TextArea rows={3} />
+                    </Form.Item>
+                </Form>
+            </Modal>
         </div>
     );
 };

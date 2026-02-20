@@ -1,4 +1,5 @@
 import api from '../lib/api';
+import type { User } from '../types';
 
 const getCookie = (name: string) => {
     const value = `; ${document.cookie}`;
@@ -30,7 +31,7 @@ export const authService = {
         await api.post('/logout', {}, { baseURL: rootUrl, headers: getCsrfHeaders() });
     },
     me: async () => {
-        const response = await api.get('/me');
+        const response = await api.get<{ user: User }>('/me');
         return response.data;
     },
 };

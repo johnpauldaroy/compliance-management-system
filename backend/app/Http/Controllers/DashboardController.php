@@ -198,7 +198,8 @@ class DashboardController extends Controller
             return 'na';
         }
 
-        $uploads = $requirement->uploads;
+        $deadlineKey = Carbon::parse($requirement->deadline)->toDateString();
+        $uploads = $requirement->uploads->where('deadline_at_upload', $deadlineKey);
         if ($uploads->where('approval_status', 'PENDING')->count() > 0) {
             return 'for_approval';
         }
@@ -233,8 +234,10 @@ class DashboardController extends Controller
             return 'pending';
         }
 
+        $deadlineKey = Carbon::parse($requirement->deadline)->toDateString();
         $userUploads = $requirement->uploads
-            ->where('assignment_id', $assignment->id);
+            ->where('assignment_id', $assignment->id)
+            ->where('deadline_at_upload', $deadlineKey);
 
         if ($userUploads->where('approval_status', 'PENDING')->count() > 0) {
             return 'for_approval';

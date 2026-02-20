@@ -17,6 +17,7 @@ class Upload extends Model
         'uploaded_by_user_id',
         'uploader_email',
         'upload_date',
+        'deadline_at_upload',
         'comments',
         'approval_status',
         'status_change_on',
@@ -26,6 +27,7 @@ class Upload extends Model
 
     protected $casts = [
         'upload_date' => 'datetime',
+        'deadline_at_upload' => 'date',
         'status_change_on' => 'datetime',
     ];
 

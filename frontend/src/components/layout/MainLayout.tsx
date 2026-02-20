@@ -16,8 +16,10 @@ import { authService } from '../../services/authService';
 import { canAccessPath, getAccessLevel, getDefaultRoute, isMenuKeyAllowed, type AccessLevel } from '../../lib/access';
 import './MainLayout.css';
 import { useQuery } from '@tanstack/react-query';
+import type { User } from '../../types';
 
 const { Sider, Header, Content } = Layout;
+type MeResponse = { user: User };
 
 const MainLayout = () => {
     const location = useLocation();
@@ -69,7 +71,7 @@ const MainLayout = () => {
         }
     };
 
-    const { data } = useQuery({
+    const { data } = useQuery<MeResponse>({
         queryKey: ['me'],
         queryFn: authService.me,
         retry: false,

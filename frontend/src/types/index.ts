@@ -90,6 +90,7 @@ export interface Upload {
   uploader?: User;
   uploader_email: string;
   upload_date: string;
+  deadline_at_upload?: string | null;
   comments: string | null;
   approval_status: 'PENDING' | 'APPROVED' | 'REJECTED';
   status_change_on: string | null;

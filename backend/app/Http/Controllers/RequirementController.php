@@ -304,6 +304,14 @@ class RequirementController extends Controller
                 && $validated['deadline'] !== $originalDeadline;
 
             if ($deadlineChanged) {
+                $requirement->assignments()->update([
+                    'compliance_status' => 'PENDING',
+                    'last_submitted_at' => null,
+                    'last_approved_at' => null,
+                ]);
+            }
+
+            if ($deadlineChanged) {
                 $allAssignments = $requirement->assignments()->with('user', 'requirement')->get();
                 $this->notifyAssignmentsDeadline($allAssignments, 'updated');
             } elseif (!empty($newAssignments)) {

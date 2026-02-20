@@ -21,19 +21,19 @@ const ReferenceDataPage = () => {
     const [unitSearch, setUnitSearch] = useState('');
     const [positionSearch, setPositionSearch] = useState('');
 
-    const { data: agencies, isLoading: isAgenciesLoading, refetch: refetchAgencies } = useQuery({
+    const { data: agencies, isLoading: isAgenciesLoading, refetch: refetchAgencies } = useQuery<Agency[]>({
         queryKey: ['agencies'],
-        queryFn: agencyService.getAll,
+        queryFn: () => agencyService.getAll(),
     });
 
-    const { data: branchUnits, isLoading: isUnitsLoading, refetch: refetchUnits } = useQuery({
+    const { data: branchUnits, isLoading: isUnitsLoading, refetch: refetchUnits } = useQuery<BranchUnitDepartment[]>({
         queryKey: ['branch-unit-departments'],
-        queryFn: branchUnitDepartmentService.getAll,
+        queryFn: () => branchUnitDepartmentService.getAll(),
     });
 
-    const { data: positions, isLoading: isPositionsLoading, refetch: refetchPositions } = useQuery({
+    const { data: positions, isLoading: isPositionsLoading, refetch: refetchPositions } = useQuery<Position[]>({
         queryKey: ['positions'],
-        queryFn: positionService.getAll,
+        queryFn: () => positionService.getAll(),
     });
 
     const createAgency = useMutation({

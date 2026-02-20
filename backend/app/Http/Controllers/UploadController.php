@@ -24,6 +24,7 @@ class UploadController extends Controller
             'requirement_id' => 'required|exists:requirements,id',
             'doc_file' => 'required|file|mimes:pdf|max:10240',
             'comments' => 'nullable|string',
+            'deadline_at_upload' => 'nullable|date',
         ]);
 
         $user = Auth::user();
@@ -44,6 +45,24 @@ class UploadController extends Controller
         // If no assignment exists for the admin, we'll create one if they are actually a PIC, 
         // but here we'll assume they are uploading for the requirement master if no specific PIC is intended.
         // However, the table structure now requires assignment_id for tracking.
+        $isAdmin = $user->hasAnyRole(['Compliance & Admin Specialist', 'Super Admin']);
+        $deadlineDate = $assignment?->deadline ?? $requirement->deadline;
+        if (!$isAdmin && !$deadlineDate) {
+            return response()->json(['message' => 'Uploads are disabled until a deadline is set for this requirement.'], 422);
+        }
+
+        if (!$isAdmin && $deadlineDate) {
+            $deadlineKey = Carbon::parse($deadlineDate)->toDateString();
+            $approvedExists = Upload::where('requirement_id', $requirement->id)
+                ->where('uploaded_by_user_id', $user->id)
+                ->where('approval_status', 'APPROVED')
+                ->whereDate('deadline_at_upload', $deadlineKey)
+                ->exists();
+
+            if ($approvedExists) {
+                return response()->json(['message' => 'An approved upload already exists for this deadline.'], 422);
+            }
+        }
 
         $path = $request->file('doc_file')->store('compliance_docs');
 
@@ -53,7 +72,7 @@ class UploadController extends Controller
             : 'PENDING';
         $adminRemarks = $canSetApproval ? $request->admin_remarks : null;
 
-        return DB::transaction(function () use ($request, $requirement, $assignment, $path, $user, $approvalStatus, $adminRemarks) {
+        return DB::transaction(function () use ($request, $requirement, $assignment, $path, $user, $approvalStatus, $adminRemarks, $isAdmin, $deadlineDate) {
             $upload = Upload::create([
                 'upload_id' => 'UP-' . uniqid(),
                 'requirement_id' => $requirement->id,
@@ -62,6 +81,9 @@ class UploadController extends Controller
                 'uploaded_by_user_id' => $user->id,
                 'uploader_email' => $user->email,
                 'upload_date' => now(),
+                'deadline_at_upload' => $isAdmin
+                    ? ($request->input('deadline_at_upload') ?: $deadlineDate)
+                    : $deadlineDate,
                 'comments' => $request->comments,
                 'approval_status' => $approvalStatus,
                 'admin_remarks' => $adminRemarks,
