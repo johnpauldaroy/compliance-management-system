@@ -15,7 +15,7 @@ const getCsrfHeaders = () => {
     return xsrfToken ? { 'X-XSRF-TOKEN': xsrfToken } : undefined;
 };
 
-const getRootUrl = () => api.defaults.baseURL?.replace('/api', '') || 'http://localhost:8001';
+const getRootUrl = () => api.defaults.baseURL?.replace('/api', '') || window.location.origin;
 
 export const agencyService = {
     getAll: async (params?: { active_only?: boolean }) =>
