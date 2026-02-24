@@ -90,11 +90,25 @@ Set these values in Dokploy before building:
   - `VITE_API_URL=https://<your-api-domain>/api`
 
 - Backend (`/backend`):
+  - `APP_ENV=production`
+  - `APP_DEBUG=false`
+  - `APP_KEY=base64:...`
   - `APP_URL=https://<your-api-domain>`
   - `CORS_ALLOWED_ORIGINS=https://<your-frontend-domain>`
   - `SANCTUM_STATEFUL_DOMAINS=<your-frontend-domain>`
   - `SESSION_DOMAIN=.your-domain.com`
   - `SESSION_SECURE_COOKIE=true`
+  - `MAIL_MAILER=smtp`
+  - `MAIL_SCHEME=tls`
+  - `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD`
+  - `MAIL_FROM_ADDRESS`, `MAIL_FROM_NAME`
+
+In Dokploy, create a second backend service for the scheduler:
+
+- Root dir: `/backend`
+- Dockerfile: `Dockerfile`
+- Command: `php artisan schedule:work`
+- No public port required
 
 If your frontend is `https://compliance.example.com` and backend is `https://api.example.com`, values should look like:
 
@@ -106,6 +120,8 @@ If your frontend is `https://compliance.example.com` and backend is `https://api
 - `SESSION_SECURE_COOKIE=true`
 
 Backend container now serves HTTP on port `8000` (`php artisan serve`). In Dokploy, ensure the backend service HTTP port is `8000`.
+
+See [`DOKPLOY.md`](./DOKPLOY.md) for full setup and troubleshooting.
 
 ## License
 MIT

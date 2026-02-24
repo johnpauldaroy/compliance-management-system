@@ -24,11 +24,17 @@ COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 # Set working directory
 WORKDIR /var/www
 
-# Copy all files
+# Copy build context.
+# If Dokploy is configured at repo root, backend app lives under /var/www/backend.
 COPY . .
 
+# Normalize app location so artisan/composer run from /var/www in both context modes.
+RUN if [ ! -f composer.json ] && [ -f backend/composer.json ]; then \
+      cp -a backend/. /var/www/; \
+    fi
+
 # Install dependencies
-RUN composer install --no-dev --optimize-autoloader
+RUN composer install --no-dev --optimize-autoloader --no-interaction --prefer-dist --no-progress
 
 # Set permissions
 RUN chown -R www-data:www-data /var/www \
