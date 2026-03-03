@@ -27,9 +27,7 @@ export const API_ROOT_URL = API_BASE_URL.replace(/\/api$/i, '');
 
 const api = axios.create({
   baseURL: API_BASE_URL,
-  withCredentials: true,
-  xsrfCookieName: 'XSRF-TOKEN',
-  xsrfHeaderName: 'X-XSRF-TOKEN',
+  withCredentials: false,
   headers: {
     'X-Requested-With': 'XMLHttpRequest',
     'Content-Type': 'application/json',
