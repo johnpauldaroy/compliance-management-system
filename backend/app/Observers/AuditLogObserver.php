@@ -6,6 +6,7 @@ use App\Models\AuditLog;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Request;
+use Throwable;
 
 class AuditLogObserver
 {
@@ -49,17 +50,26 @@ class AuditLogObserver
             return;
         }
 
-        AuditLog::create([
-            'actor_user_id' => $actorId,
-            'action' => $action,
-            'entity_type' => get_class($model),
-            'entity_id' => $model->getKey(),
-            'before_json' => !empty($before) ? $before : null,
-            'after_json' => !empty($after) ? $after : null,
-            'ip_address' => Request::ip(),
-            'user_agent' => Request::userAgent(),
-            'created_at' => now(),
-        ]);
+        try {
+            AuditLog::create([
+                'actor_user_id' => $actorId,
+                'action' => $action,
+                'entity_type' => get_class($model),
+                'entity_id' => $model->getKey(),
+                'before_json' => !empty($before) ? $before : null,
+                'after_json' => !empty($after) ? $after : null,
+                'ip_address' => Request::ip(),
+                'user_agent' => Request::userAgent(),
+                'created_at' => now(),
+            ]);
+        } catch (Throwable $exception) {
+            \Log::warning('Failed to write model audit log', [
+                'action' => $action,
+                'entity_type' => get_class($model),
+                'entity_id' => $model->getKey(),
+                'error' => $exception->getMessage(),
+            ]);
+        }
     }
 
     protected function updateActionFor(Model $model): string

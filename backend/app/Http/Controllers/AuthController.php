@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 
 class AuthController extends Controller
 {
@@ -37,10 +38,10 @@ class AuthController extends Controller
 
         $token = $user->createToken('web')->plainTextToken;
 
-        return response()->json([
-            'user' => $user->load('roles'),
-            'token' => $token,
-        ]);
+        return response()->json(array_merge(
+            $this->authenticatedUserPayload($user),
+            ['token' => $token]
+        ));
     }
 
     public function logout(Request $request)
@@ -56,9 +57,25 @@ class AuthController extends Controller
 
     public function me(Request $request)
     {
-        return response()->json([
-            'user' => $request->user()->load('roles'),
-        ]);
+        return response()->json($this->authenticatedUserPayload($request->user()));
+    }
+
+    protected function authenticatedUserPayload($user): array
+    {
+        if (!$user) {
+            return ['user' => null];
+        }
+
+        try {
+            $user->load('roles');
+        } catch (Throwable $exception) {
+            \Log::warning('Unable to load user roles during auth response', [
+                'user_id' => $user->id,
+                'error' => $exception->getMessage(),
+            ]);
+        }
+
+        return ['user' => $user];
     }
 
 }

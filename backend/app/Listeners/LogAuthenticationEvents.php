@@ -8,6 +8,7 @@ use Illuminate\Auth\Events\Logout;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Support\Facades\Request;
+use Throwable;
 
 class LogAuthenticationEvents
 {
@@ -41,16 +42,24 @@ class LogAuthenticationEvents
             return;
         }
 
-        AuditLog::create([
-            'actor_user_id' => $user->id,
-            'action' => $action,
-            'entity_type' => get_class($user),
-            'entity_id' => $user->id,
-            'before_json' => null, // No before state for login/logout (or could be session metadata)
-            'after_json' => ['description' => $description],
-            'ip_address' => Request::ip(),
-            'user_agent' => Request::userAgent(),
-            'created_at' => now(),
-        ]);
+        try {
+            AuditLog::create([
+                'actor_user_id' => $user->id,
+                'action' => $action,
+                'entity_type' => get_class($user),
+                'entity_id' => $user->id,
+                'before_json' => null,
+                'after_json' => ['description' => $description],
+                'ip_address' => Request::ip(),
+                'user_agent' => Request::userAgent(),
+                'created_at' => now(),
+            ]);
+        } catch (Throwable $exception) {
+            \Log::warning('Failed to write authentication audit log', [
+                'action' => $action,
+                'user_id' => $user->id,
+                'error' => $exception->getMessage(),
+            ]);
+        }
     }
 }
