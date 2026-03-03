@@ -23,12 +23,16 @@ export const authService = {
             baseURL: rootUrl,
             headers: getCsrfHeaders(),
         });
+        if (response.data?.token) {
+            localStorage.setItem('auth_token', response.data.token);
+        }
         return response.data;
     },
     logout: async () => {
         const rootUrl = API_ROOT_URL;
         await api.get('/sanctum/csrf-cookie', { baseURL: rootUrl });
         await api.post('/logout', {}, { baseURL: rootUrl, headers: getCsrfHeaders() });
+        localStorage.removeItem('auth_token');
     },
     me: async () => {
         const response = await api.get<{ user: User }>('/me');

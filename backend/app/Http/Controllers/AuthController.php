@@ -39,8 +39,12 @@ class AuthController extends Controller
 
         $request->session()->regenerate();
 
+        $user = $request->user();
+        $token = $user->createToken('web')->plainTextToken;
+
         return response()->json([
-            'user' => $request->user()->load('roles'),
+            'user' => $user->load('roles'),
+            'token' => $token,
         ]);
     }
 
@@ -48,6 +52,10 @@ class AuthController extends Controller
     {
         $user = $request->user();
         Auth::guard('web')->logout();
+
+        if ($user && $user->currentAccessToken()) {
+            $user->currentAccessToken()->delete();
+        }
 
         $request->session()->invalidate();
         $request->session()->regenerateToken();
