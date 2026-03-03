@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Mail;
 use App\Mail\RequirementDeadlineMail;
 use App\Models\RequirementAssignment;
+use Illuminate\Validation\ValidationException;
 
 class RequirementController extends Controller
 {
@@ -274,11 +275,23 @@ class RequirementController extends Controller
 
             if (array_key_exists('person_in_charge_user_ids', $validated)) {
                 $validated['person_in_charge_user_ids'] = $this->normalizeIdList($validated['person_in_charge_user_ids']);
-                $newPicUserIds = $this->parseIdList($validated['person_in_charge_user_ids']);
+                $newPicUserIds = array_values(array_unique($this->parseIdList($validated['person_in_charge_user_ids'])));
                 $oldPicUserIds = $requirement->assignments()->pluck('assigned_to_user_id')->toArray();
 
                 // Remove assignments no longer in the list
                 $toRemove = array_diff($oldPicUserIds, $newPicUserIds);
+                if (!empty($toRemove)) {
+                    $hasUploadedAssignments = $requirement->assignments()
+                        ->whereIn('assigned_to_user_id', $toRemove)
+                        ->whereHas('uploads')
+                        ->exists();
+
+                    if ($hasUploadedAssignments) {
+                        throw ValidationException::withMessages([
+                            'person_in_charge_user_ids' => ['Cannot remove assigned person-in-charge with existing uploads.'],
+                        ]);
+                    }
+                }
                 $requirement->assignments()->whereIn('assigned_to_user_id', $toRemove)->delete();
 
                 // Add new assignments

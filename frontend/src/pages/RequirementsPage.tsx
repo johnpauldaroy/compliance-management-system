@@ -285,6 +285,14 @@ const RequirementsPage = () => {
     };
 
     const handleEdit = (record: Requirement) => {
+        const selectedPicIds = toIdList(record.person_in_charge_user_ids);
+        const assignmentPicIds = (record.assignments || [])
+            .map((assignment) => assignment.assigned_to_user_id)
+            .filter(Boolean);
+        const resolvedPicIds = selectedPicIds.length
+            ? selectedPicIds
+            : Array.from(new Set(assignmentPicIds));
+
         setEditingRequirement(record);
         form.setFieldsValue({
             req_id: record.req_id,
@@ -294,9 +302,10 @@ const RequirementsPage = () => {
             description: record.description || '',
             position_ids: toIdList(record.position_ids),
             branch_unit_department_ids: toIdList(record.branch_unit_department_ids),
-            person_in_charge_user_ids: toIdList(record.person_in_charge_user_ids),
+            person_in_charge_user_ids: resolvedPicIds,
             frequency: record.frequency,
             schedule: record.schedule,
+            deadline: record.deadline || '',
         });
         setIsDrawerOpen(true);
     };
