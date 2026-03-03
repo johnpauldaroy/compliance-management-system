@@ -210,6 +210,8 @@ class RequirementController extends Controller
         ]);
 
         return DB::transaction(function () use ($validated, $request) {
+            // The schedule column is currently non-nullable in production schema.
+            $validated['schedule'] = $validated['schedule'] ?? '';
             $validated['req_id'] = $this->generateReqId((int) $validated['agency_id']);
 
             // Still keep the strings for now to maintain frontend compatibility during transition
@@ -266,6 +268,10 @@ class RequirementController extends Controller
         return DB::transaction(function () use ($validated, $requirement) {
             $originalDeadline = $requirement->deadline;
             $newAssignments = [];
+            if (array_key_exists('schedule', $validated) && $validated['schedule'] === null) {
+                // Keep compatibility with deployments where requirements.schedule is NOT NULL.
+                $validated['schedule'] = '';
+            }
             if (array_key_exists('position_ids', $validated)) {
                 $validated['position_ids'] = $this->normalizeIdList($validated['position_ids']);
             }
