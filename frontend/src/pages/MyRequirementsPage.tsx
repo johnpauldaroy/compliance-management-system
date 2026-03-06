@@ -210,10 +210,13 @@ const MyRequirementsPage = () => {
                                 {(() => {
                                     const uploads = data.uploads ?? [];
                                     const deadlineKey = toPhDateKey(data.deadline);
+                                    const currentUserId = meData?.user?.id;
                                     const approvedForDeadline = Boolean(
                                         deadlineKey
+                                            && currentUserId
                                             && uploads.some((upload) =>
                                                 upload.approval_status === 'APPROVED'
+                                                && upload.uploaded_by_user_id === currentUserId
                                                 && toPhDateKey(upload.deadline_at_upload) === deadlineKey
                                             )
                                     );

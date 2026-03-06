@@ -53,11 +53,17 @@ class UploadController extends Controller
 
         if (!$isAdmin && $deadlineDate) {
             $deadlineKey = Carbon::parse($deadlineDate)->toDateString();
-            $approvedExists = Upload::where('requirement_id', $requirement->id)
-                ->where('uploaded_by_user_id', $user->id)
+            $approvedExistsQuery = Upload::where('requirement_id', $requirement->id)
                 ->where('approval_status', 'APPROVED')
-                ->whereDate('deadline_at_upload', $deadlineKey)
-                ->exists();
+                ->whereDate('deadline_at_upload', $deadlineKey);
+
+            if ($assignment) {
+                $approvedExistsQuery->where('assignment_id', $assignment->id);
+            } else {
+                $approvedExistsQuery->where('uploaded_by_user_id', $user->id);
+            }
+
+            $approvedExists = $approvedExistsQuery->exists();
 
             if ($approvedExists) {
                 return response()->json(['message' => 'An approved upload already exists for this deadline.'], 422);
