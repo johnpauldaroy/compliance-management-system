@@ -245,13 +245,40 @@ class UploadController extends Controller
     private function serveUploadFile(Upload $upload, Request $request)
     {
         $path = $upload->doc_file;
-        if (!$path || !Storage::exists($path)) {
+        if (!$path) {
             return response()->json(['message' => 'File not found.'], 404);
         }
 
         $inline = filter_var($request->query('inline', false), FILTER_VALIDATE_BOOLEAN);
-        $fullPath = Storage::path($path);
         $fileName = basename($path);
+        $disk = $this->resolveUploadDisk($path);
+
+        if (!$disk) {
+            return response()->json(['message' => 'File not found.'], 404);
+        }
+
+        $driver = config("filesystems.disks.$disk.driver");
+        if ($driver !== 'local') {
+            $stream = Storage::disk($disk)->readStream($path);
+            if (!$stream) {
+                return response()->json(['message' => 'File not found.'], 404);
+            }
+
+            $disposition = $inline ? 'inline' : 'attachment';
+            $headers = [
+                'Content-Type' => 'application/octet-stream',
+                'Content-Disposition' => $disposition . '; filename="' . $fileName . '"',
+            ];
+
+            return response()->stream(function () use ($stream) {
+                fpassthru($stream);
+                if (is_resource($stream)) {
+                    fclose($stream);
+                }
+            }, 200, $headers);
+        }
+
+        $fullPath = Storage::disk($disk)->path($path);
 
         if ($inline) {
             return response()->file($fullPath, [
@@ -260,6 +287,23 @@ class UploadController extends Controller
         }
 
         return response()->download($fullPath, $fileName);
+    }
+
+    private function resolveUploadDisk(string $path): ?string
+    {
+        $candidates = array_values(array_unique([
+            config('filesystems.default'),
+            'public',
+            'local',
+        ]));
+
+        foreach ($candidates as $disk) {
+            if ($disk && Storage::disk($disk)->exists($path)) {
+                return $disk;
+            }
+        }
+
+        return null;
     }
 
     private function notifySpecialistsPendingReview(Upload $upload): void
