@@ -105,7 +105,8 @@ class RequirementController extends Controller
             'agency',
             'assignments' => function ($query) use ($user) {
                 $query->where('assigned_to_user_id', $user->id);
-            }
+            },
+            'assignments.uploads.uploader',
         ])->where(function ($query) use ($userId) {
             $query->whereHas('assignments', function ($subQuery) use ($userId) {
                 $subQuery->where('assigned_to_user_id', $userId);
