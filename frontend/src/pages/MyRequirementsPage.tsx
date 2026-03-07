@@ -1,5 +1,5 @@
 import { List, Card, Button, Tag, Space, Typography, Drawer, Descriptions, Upload, message, Modal, Form, Input, Select, Collapse, Tooltip, DatePicker } from 'antd';
-import { UploadOutlined, ClockCircleOutlined, FileTextOutlined } from '@ant-design/icons';
+import { UploadOutlined, ClockCircleOutlined, FileTextOutlined, EyeOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import dayjs from 'dayjs';
@@ -105,6 +105,15 @@ const MyRequirementsPage = () => {
             return 'default';
         }
         return 'warning';
+    };
+
+    const handleViewUpload = async (uploadId: number) => {
+        try {
+            const { url } = await uploadService.getSignedUrl(uploadId, true);
+            window.open(url, '_blank', 'noopener,noreferrer');
+        } catch (error: any) {
+            message.error(error.response?.data?.message || 'Failed to open file.');
+        }
     };
 
     return (
@@ -296,27 +305,42 @@ const MyRequirementsPage = () => {
                                                                 dataSource={items}
                                                                 renderItem={(upload) => (
                                                                     <List.Item>
-                                                                        <Card style={{ width: '100%' }}>
-                                                                            <Space size="large">
+                                                                <Card style={{ width: '100%' }}>
+                                                                    <Space size="large">
+                                                                        <div>
+                                                                            <Text strong>{upload.upload_id}</Text>
+                                                                            <div>Uploaded by: {upload.uploader?.employee_name || upload.uploader_email}</div>
+                                                                            <div>Uploaded at: {upload.upload_date ? new Date(upload.upload_date).toLocaleString() : 'N/A'}</div>
+                                                                            {upload.approval_status !== 'PENDING' ? (
                                                                                 <div>
-                                                                                    <Text strong>{upload.upload_id}</Text>
-                                                                                    <div>Uploaded by: {upload.uploader?.employee_name || upload.uploader_email}</div>
-                                                                                    <div>Uploaded at: {upload.upload_date ? new Date(upload.upload_date).toLocaleString() : 'N/A'}</div>
-                                                                                    {upload.approval_status !== 'PENDING' ? (
-                                                                                        <div>
-                                                                                            {upload.approval_status === 'APPROVED' ? 'Approved' : 'Rejected'} at:{' '}
-                                                                                            {upload.status_change_on ? new Date(upload.status_change_on).toLocaleString() : 'N/A'}
-                                                                                        </div>
-                                                                                    ) : null}
+                                                                                    {upload.approval_status === 'APPROVED' ? 'Approved' : 'Rejected'} at:{' '}
+                                                                                    {upload.status_change_on ? new Date(upload.status_change_on).toLocaleString() : 'N/A'}
                                                                                 </div>
-                                                                                <Tag color={upload.approval_status === 'APPROVED' ? 'success' : upload.approval_status === 'REJECTED' ? 'error' : 'processing'}>
-                                                                                    {upload.approval_status}
-                                                                                </Tag>
-                                                                            </Space>
-                                                                        </Card>
-                                                                    </List.Item>
-                                                                )}
-                                                            />
+                                                                            ) : null}
+                                                                            {upload.uploaded_by_user_id === meData?.user?.id ? (
+                                                                                <>
+                                                                                    {upload.comments ? <div>Your comment: {upload.comments}</div> : null}
+                                                                                    {upload.admin_remarks ? <div>Admin remarks: {upload.admin_remarks}</div> : null}
+                                                                                </>
+                                                                            ) : null}
+                                                                        </div>
+                                                                        <Tag color={upload.approval_status === 'APPROVED' ? 'success' : upload.approval_status === 'REJECTED' ? 'error' : 'processing'}>
+                                                                            {upload.approval_status}
+                                                                        </Tag>
+                                                                        {upload.uploaded_by_user_id === meData?.user?.id ? (
+                                                                            <Button
+                                                                                size="small"
+                                                                                icon={<EyeOutlined />}
+                                                                                onClick={() => handleViewUpload(upload.id)}
+                                                                            >
+                                                                                View file
+                                                                            </Button>
+                                                                        ) : null}
+                                                                    </Space>
+                                                                </Card>
+                                                            </List.Item>
+                                                        )}
+                                                    />
                                                         ),
                                                     };
                                                     });
