@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Models\Requirement;
-use App\Models\Upload;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -21,7 +20,7 @@ class RequirementController extends Controller
         $perPage = (int) $request->query('per_page', 25);
         $perPage = $perPage > 0 ? min($perPage, 200) : 25;
 
-        $query = Requirement::with(['agency', 'assignments.user', 'assignments.uploads']);
+        $query = Requirement::with(['agency', 'assignments.user', 'assignments.submissions']);
 
         if ($request->filled('agency_id')) {
             $query->where('agency_id', $request->query('agency_id'));
@@ -106,7 +105,10 @@ class RequirementController extends Controller
             'assignments' => function ($query) use ($user) {
                 $query->where('assigned_to_user_id', $user->id);
             },
-            'assignments.uploads.uploader',
+            'assignments.submissions.uploader',
+            'submissions.files',
+            'submissions.uploader',
+            'submissions.assignment.user',
         ])->where(function ($query) use ($userId) {
             $query->whereHas('assignments', function ($subQuery) use ($userId) {
                 $subQuery->where('assigned_to_user_id', $userId);
@@ -205,6 +207,8 @@ class RequirementController extends Controller
             'frequency' => 'required|string',
             'schedule' => 'nullable|string',
             'deadline' => 'nullable|date|after_or_equal:today',
+            'auto_deadline_enabled' => 'sometimes|boolean',
+            'assignment_mode' => 'nullable|in:parallel,sequential',
             'position_ids' => 'nullable',
             'branch_unit_department_ids' => 'nullable',
             'person_in_charge_user_ids' => 'nullable',
@@ -214,6 +218,11 @@ class RequirementController extends Controller
             // The schedule column is currently non-nullable in production schema.
             $validated['schedule'] = $validated['schedule'] ?? '';
             $validated['req_id'] = $this->generateReqId((int) $validated['agency_id']);
+            $validated['auto_deadline_enabled'] = $this->normalizeAutoDeadlineFlag(
+                $validated['frequency'],
+                array_key_exists('auto_deadline_enabled', $validated) ? $validated['auto_deadline_enabled'] : null
+            );
+            $validated['assignment_mode'] = $this->normalizeAssignmentMode($validated['assignment_mode'] ?? null);
 
             // Still keep the strings for now to maintain frontend compatibility during transition
             $validated['position_ids'] = $this->normalizeIdList($validated['position_ids'] ?? null);
@@ -224,14 +233,17 @@ class RequirementController extends Controller
 
             $picUserIds = $this->parseIdList($validated['person_in_charge_user_ids']);
             $assignments = [];
+            $sequence = 1;
             foreach ($picUserIds as $userId) {
                 $assignments[] = RequirementAssignment::create([
                     'assignment_id' => 'ASGN-' . strtoupper(\Illuminate\Support\Str::random(10)),
                     'requirement_id' => $requirement->id,
                     'assigned_to_user_id' => $userId,
+                    'sequence_order' => $validated['assignment_mode'] === 'sequential' ? $sequence : null,
                     'deadline' => $requirement->deadline,
                     'compliance_status' => 'PENDING',
                 ]);
+                $sequence++;
             }
 
             DB::afterCommit(function () use ($assignments) {
@@ -245,7 +257,14 @@ class RequirementController extends Controller
     public function show(Requirement $requirement)
     {
         $this->authorize('view', $requirement);
-        $requirement->load(['agency', 'assignments.user', 'assignments.uploads.uploader', 'uploads.uploader']);
+        $requirement->load([
+            'agency',
+            'assignments.user',
+            'assignments.submissions.uploader',
+            'submissions.files',
+            'submissions.uploader',
+            'submissions.assignment.user',
+        ]);
         $requirement->compliance_status = $this->summarizeComplianceStatus($requirement);
 
         return response()->json($requirement);
@@ -261,6 +280,8 @@ class RequirementController extends Controller
             'frequency' => 'string',
             'schedule' => 'nullable|string',
             'deadline' => 'nullable|date|after_or_equal:today',
+            'auto_deadline_enabled' => 'sometimes|boolean',
+            'assignment_mode' => 'nullable|in:parallel,sequential',
             'position_ids' => 'nullable',
             'branch_unit_department_ids' => 'nullable',
             'person_in_charge_user_ids' => 'nullable',
@@ -269,9 +290,16 @@ class RequirementController extends Controller
         return DB::transaction(function () use ($validated, $requirement) {
             $originalDeadline = $requirement->deadline;
             $newAssignments = [];
+            $newPicUserIds = null;
+            $assignmentMode = array_key_exists('assignment_mode', $validated)
+                ? $this->normalizeAssignmentMode($validated['assignment_mode'])
+                : ($requirement->assignment_mode ?: 'parallel');
             if (array_key_exists('schedule', $validated) && $validated['schedule'] === null) {
                 // Keep compatibility with deployments where requirements.schedule is NOT NULL.
                 $validated['schedule'] = '';
+            }
+            if (array_key_exists('assignment_mode', $validated)) {
+                $validated['assignment_mode'] = $assignmentMode;
             }
             if (array_key_exists('position_ids', $validated)) {
                 $validated['position_ids'] = $this->normalizeIdList($validated['position_ids']);
@@ -290,12 +318,12 @@ class RequirementController extends Controller
                 if (!empty($toRemove)) {
                     $hasUploadedAssignments = $requirement->assignments()
                         ->whereIn('assigned_to_user_id', $toRemove)
-                        ->whereHas('uploads')
+                        ->whereHas('submissions')
                         ->exists();
 
                     if ($hasUploadedAssignments) {
                         throw ValidationException::withMessages([
-                            'person_in_charge_user_ids' => ['Cannot remove assigned person-in-charge with existing uploads.'],
+                            'person_in_charge_user_ids' => ['Cannot remove assigned person-in-charge with existing submissions.'],
                         ]);
                     }
                 }
@@ -313,6 +341,29 @@ class RequirementController extends Controller
                     ]);
                 }
             }
+
+            if ($assignmentMode === 'sequential') {
+                if ($newPicUserIds !== null) {
+                    foreach ($newPicUserIds as $index => $userId) {
+                        RequirementAssignment::where('requirement_id', $requirement->id)
+                            ->where('assigned_to_user_id', $userId)
+                            ->update(['sequence_order' => $index + 1]);
+                    }
+                } elseif ($assignmentMode !== $requirement->assignment_mode) {
+                    $orderedAssignments = $requirement->assignments()->orderBy('id')->get();
+                    foreach ($orderedAssignments as $index => $assignment) {
+                        $assignment->update(['sequence_order' => $index + 1]);
+                    }
+                }
+            } elseif ($assignmentMode !== $requirement->assignment_mode || $newPicUserIds !== null) {
+                $requirement->assignments()->update(['sequence_order' => null]);
+            }
+
+            $frequency = $validated['frequency'] ?? $requirement->frequency;
+            $autoDeadlineInput = array_key_exists('auto_deadline_enabled', $validated)
+                ? $validated['auto_deadline_enabled']
+                : $requirement->auto_deadline_enabled;
+            $validated['auto_deadline_enabled'] = $this->normalizeAutoDeadlineFlag($frequency, $autoDeadlineInput);
 
             // Sync deadlines for all assignments if changed
             if (isset($validated['deadline'])) {
@@ -339,9 +390,18 @@ class RequirementController extends Controller
                     $this->notifyAssignmentsDeadline($allAssignments, 'updated');
                 });
             } elseif (!empty($newAssignments)) {
-                DB::afterCommit(function () use ($newAssignments) {
-                    $this->notifyAssignmentsDeadline($newAssignments, 'assigned');
-                });
+                if ($assignmentMode === 'sequential') {
+                    $active = $requirement->activeSequentialAssignment();
+                    if ($active && collect($newAssignments)->contains('id', $active->id)) {
+                        DB::afterCommit(function () use ($active) {
+                            $this->notifyAssignmentsDeadline([$active], 'assigned');
+                        });
+                    }
+                } else {
+                    DB::afterCommit(function () use ($newAssignments) {
+                        $this->notifyAssignmentsDeadline($newAssignments, 'assigned');
+                    });
+                }
             }
 
             return response()->json($requirement);
@@ -394,6 +454,29 @@ class RequirementController extends Controller
         return null;
     }
 
+    private function normalizeAssignmentMode(?string $mode): string
+    {
+        $normalized = strtolower(trim((string) $mode));
+        return $normalized === 'sequential' ? 'sequential' : 'parallel';
+    }
+
+    private function isMonthlyFrequency(?string $frequency): bool
+    {
+        if (!$frequency) {
+            return false;
+        }
+        return stripos($frequency, 'month') !== false;
+    }
+
+    private function normalizeAutoDeadlineFlag(?string $frequency, ?bool $requestedValue): bool
+    {
+        if (!$this->isMonthlyFrequency($frequency)) {
+            return false;
+        }
+
+        return $requestedValue ?? true;
+    }
+
     private function parseIdList(?string $value): array
     {
         if (!$value) {
@@ -439,29 +522,49 @@ class RequirementController extends Controller
 
     private function notifyAssignmentsDeadline($assignments, string $context): void
     {
-        foreach ($assignments as $assignment) {
-            $assignment->loadMissing(['user', 'requirement']);
-            if (!$assignment->deadline && $context !== 'assigned') {
+        $grouped = collect($assignments)->groupBy('requirement_id');
+        foreach ($grouped as $requirementId => $group) {
+            $requirement = $group->first()?->requirement ?? Requirement::find($requirementId);
+            if (!$requirement) {
                 continue;
             }
-            if ($assignment->compliance_status === 'APPROVED') {
-                continue;
-            }
-            $pic = $assignment->user;
-            if (!$pic || !$pic->email) {
+            if ($requirement && $requirement->isSequential()) {
+                $active = $requirement->activeSequentialAssignment();
+                if ($active) {
+                    $this->sendDeadlineNotification($active, $context);
+                }
                 continue;
             }
 
-            try {
-                Mail::to($pic->email)->send(new RequirementDeadlineMail($assignment, $context));
-            } catch (\Throwable $e) {
-                \Log::error('Failed to send requirement deadline email', [
-                    'assignment_id' => $assignment->id,
-                    'email' => $pic->email,
-                    'context' => $context,
-                    'error' => $e->getMessage(),
-                ]);
+            foreach ($group as $assignment) {
+                $this->sendDeadlineNotification($assignment, $context);
             }
+        }
+    }
+
+    private function sendDeadlineNotification(RequirementAssignment $assignment, string $context): void
+    {
+        $assignment->loadMissing(['user', 'requirement']);
+        if (!$assignment->deadline && $context !== 'assigned') {
+            return;
+        }
+        if ($assignment->compliance_status === 'APPROVED') {
+            return;
+        }
+        $pic = $assignment->user;
+        if (!$pic || !$pic->email) {
+            return;
+        }
+
+        try {
+            Mail::to($pic->email)->send(new RequirementDeadlineMail($assignment, $context));
+        } catch (\Throwable $e) {
+            \Log::error('Failed to send requirement deadline email', [
+                'assignment_id' => $assignment->id,
+                'email' => $pic->email,
+                'context' => $context,
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 }

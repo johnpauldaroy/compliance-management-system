@@ -22,9 +22,13 @@ class RequirementDeadlineMail extends Mailable
 
     public function build()
     {
-        $subject = $this->context === 'updated'
-            ? 'Compliance deadline updated'
-            : 'New compliance requirement assigned';
+        if ($this->context === 'updated') {
+            $subject = 'Compliance deadline updated';
+        } elseif ($this->context === 'activated') {
+            $subject = 'Compliance requirement now active';
+        } else {
+            $subject = 'New compliance requirement assigned';
+        }
 
         return $this->from(config('mail.from.address'), config('mail.from.name'))
             ->subject($subject)

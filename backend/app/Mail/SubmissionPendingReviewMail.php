@@ -3,6 +3,7 @@
 namespace App\Mail;
 
 use App\Models\Upload;
+use App\Models\UploadSubmission;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
 use Illuminate\Queue\SerializesModels;
@@ -11,11 +12,16 @@ class SubmissionPendingReviewMail extends Mailable
 {
     use Queueable, SerializesModels;
 
-    public Upload $upload;
+    public Upload|UploadSubmission $submission;
 
-    public function __construct(Upload $upload)
+    public function __construct(Upload|UploadSubmission $submission)
     {
-        $this->upload = $upload->loadMissing(['requirement', 'assignment.user', 'uploader']);
+        $relations = ['requirement', 'assignment.user', 'uploader'];
+        if ($submission instanceof UploadSubmission) {
+            $relations[] = 'files';
+        }
+
+        $this->submission = $submission->loadMissing($relations);
     }
 
     public function build()

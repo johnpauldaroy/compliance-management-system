@@ -5,14 +5,14 @@
     <title>Submission Status</title>
 </head>
 <body>
-    <p>Hi {{ $upload->uploader?->employee_name ?? 'PIC' }},</p>
+    <p>Hi {{ $submission->uploader?->employee_name ?? 'PIC' }},</p>
 
-    <p>Your compliance submission has been <strong>{{ strtoupper($upload->approval_status) }}</strong>.</p>
+    <p>Your compliance submission has been <strong>{{ strtoupper($submission->approval_status) }}</strong>.</p>
 
     <ul>
-        <li><strong>Requirement:</strong> {{ $upload->requirement?->requirement ?? 'N/A' }}</li>
-        <li><strong>Submitted on:</strong> {{ $upload->upload_date ? $upload->upload_date->format('F j, Y g:i A') : 'N/A' }}</li>
-        <li><strong>Reviewer remarks:</strong> {{ $upload->admin_remarks ?? 'None' }}</li>
+        <li><strong>Requirement:</strong> {{ $submission->requirement?->requirement ?? 'N/A' }}</li>
+        <li><strong>Submitted on:</strong> {{ $submission->upload_date ? $submission->upload_date->format('F j, Y g:i A') : 'N/A' }}</li>
+        <li><strong>Reviewer remarks:</strong> {{ $submission->admin_remarks ?? 'None' }}</li>
     </ul>
 
     <p>If you have questions, please contact the compliance team.</p>

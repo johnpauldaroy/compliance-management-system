@@ -73,6 +73,7 @@ To get the entire system up and running using Docker:
 
 - Immediate emails (submission pending review, approved, rejected, requirement assignment) are sent by API requests.
 - Reminder emails (`D-30`, `D-14`, `D-7`, `D-1`) are sent by the Laravel scheduler. The `scheduler` service in `docker-compose.yml` now runs `php artisan schedule:work`.
+- In production (Dokploy), the scheduler must be a **separate backend service** that runs `php artisan schedule:work` with the same environment variables as the API service.
 - To verify SMTP config and send a test email:
   ```bash
   docker compose exec backend php artisan notifications:test-email your-email@example.com

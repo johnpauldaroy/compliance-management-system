@@ -72,6 +72,30 @@
   color: #f5222d;
 }
 
+.view-files-btn {
+  background: #e7f5ff;
+  color: #1c7ed6 !important;
+  border: 1px solid #d0ebff;
+}
+
+.view-files-btn:hover,
+.view-files-btn:focus {
+  background: #d0ebff;
+  color: #1b6ec2 !important;
+}
+
+.view-file-btn {
+  background: #f1f3f5;
+  color: #1c7ed6 !important;
+  border: 1px solid #e9ecef;
+}
+
+.view-file-btn:hover,
+.view-file-btn:focus {
+  background: #e9ecef;
+  color: #1b6ec2 !important;
+}
+
 .requirements-drawer-footer {
   display: flex;
   justify-content: flex-end;
@@ -88,6 +112,56 @@
   overflow-y: auto;
 }
 
+.requirements-drawer .ant-descriptions-item-label,
+.requirements-drawer .ant-descriptions-item-content {
+  word-break: normal;
+  overflow-wrap: break-word;
+  white-space: normal;
+  hyphens: none;
+}
+
 .requirements-drawer .ant-drawer-footer {
   margin-top: auto;
+}
+
+.requirements-submission-card {
+  border: 1px solid #e6f4ff;
+  background: linear-gradient(135deg, #f8fbff 0%, #f1f7ff 100%);
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.requirements-submission-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.requirements-submission-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.requirements-submission-label {
+  font-size: 11px;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  color: #6b7a90;
+}
+
+.requirements-submission-value {
+  font-weight: 500;
+  color: #1f2a44;
+}
+
+.requirements-submission-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
 }

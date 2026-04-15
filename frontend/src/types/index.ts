@@ -53,11 +53,13 @@ export interface Requirement {
   frequency: string;
   schedule: string;
   deadline?: string;
+  auto_deadline_enabled?: boolean;
+  assignment_mode?: 'parallel' | 'sequential';
   compliance_status?: string;
   created_at: string;
   updated_at: string;
   assignments?: RequirementAssignment[];
-  uploads?: Upload[];
+  submissions?: UploadSubmission[];
 }
 
 export interface RequirementAssignment {
@@ -66,6 +68,7 @@ export interface RequirementAssignment {
   requirement_id: number;
   requirement?: Requirement;
   assigned_to_user_id: number;
+  sequence_order?: number | null;
   user?: User;
   deadline?: string;
   compliance_status: ComplianceStatus;
@@ -74,6 +77,7 @@ export interface RequirementAssignment {
   created_at: string;
   updated_at: string;
   uploads?: Upload[];
+  submissions?: UploadSubmission[];
 }
 
 export type ComplianceStatus = 'PENDING' | 'SUBMITTED' | 'APPROVED' | 'REJECTED' | 'OVERDUE';
@@ -81,11 +85,13 @@ export type ComplianceStatus = 'PENDING' | 'SUBMITTED' | 'APPROVED' | 'REJECTED'
 export interface Upload {
   id: number;
   upload_id: string;
+  submission_id?: number | null;
   requirement_id: number;
   requirement?: Requirement;
   assignment_id?: number;
   assignment?: RequirementAssignment;
   doc_file: string;
+  original_file_name?: string | null;
   uploaded_by_user_id: number;
   uploader?: User;
   uploader_email: string;
@@ -98,6 +104,28 @@ export interface Upload {
   upload_year: number;
   created_at: string;
   updated_at: string;
+}
+
+export interface UploadSubmission {
+  id: number;
+  submission_id: string;
+  requirement_id: number;
+  requirement?: Requirement;
+  assignment_id?: number | null;
+  assignment?: RequirementAssignment;
+  uploaded_by_user_id: number;
+  uploader?: User;
+  uploader_email: string;
+  upload_date: string;
+  deadline_at_upload?: string | null;
+  comments: string | null;
+  approval_status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  status_change_on: string | null;
+  admin_remarks: string | null;
+  upload_year: number;
+  created_at: string;
+  updated_at: string;
+  files?: Upload[];
 }
 
 export interface PaginatedResponse<T> {

@@ -60,7 +60,6 @@ const UsersPage = () => {
     const [currentUserId, setCurrentUserId] = useState<number | null>(null);
     const [isImportOpen, setIsImportOpen] = useState(false);
     const [importFile, setImportFile] = useState<File | null>(null);
-    const [templateFormat, setTemplateFormat] = useState<'csv' | 'xlsx'>('csv');
     const [isTemplateOpen, setIsTemplateOpen] = useState(false);
 
     const { data, isLoading, isFetching, error, refetch } = useQuery({
@@ -248,34 +247,6 @@ const UsersPage = () => {
 
     const handleDownloadTemplate = () => {
         const headers = ['employee_name', 'email_address', 'user_type', 'branch', 'password'];
-        if (templateFormat === 'xlsx') {
-            const xmlRow = (values: string[]) => `
-                <Row>
-                    ${values.map((value) => `<Cell><Data ss:Type="String">${value}</Data></Cell>`).join('')}
-                </Row>
-            `;
-            const xml = `<?xml version="1.0"?>
-<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
- xmlns:o="urn:schemas-microsoft-com:office:office"
- xmlns:x="urn:schemas-microsoft-com:office:excel"
- xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
- xmlns:html="http://www.w3.org/TR/REC-html40">
- <Worksheet ss:Name="Users">
-  <Table>${xmlRow(headers)}</Table>
- </Worksheet>
-</Workbook>`;
-            const blob = new Blob([xml], { type: 'application/vnd.ms-excel' });
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = url;
-            link.setAttribute('download', 'user_import_template.xlsx');
-            document.body.appendChild(link);
-            link.click();
-            link.remove();
-            URL.revokeObjectURL(url);
-            return;
-        }
-
         const csv = `${headers.join(',')}\n`;
         const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
@@ -634,10 +605,10 @@ const UsersPage = () => {
             >
                 <Space direction="vertical" className="users-import">
                     <Typography.Text type="secondary">
-                        Upload a CSV or XLSX file using the provided template. New users will be active by default.
+                        Upload a CSV file using the provided template. New users will be active by default.
                     </Typography.Text>
                     <Upload
-                        accept=".csv,.xlsx"
+                        accept=".csv"
                         showUploadList={false}
                         beforeUpload={(file) => {
                             setImportFile(file);
@@ -667,17 +638,8 @@ const UsersPage = () => {
             >
                 <Space direction="vertical" className="users-import">
                     <Typography.Text type="secondary">
-                        Choose a template format to download.
+                        Download the CSV template for importing users.
                     </Typography.Text>
-                    <Select
-                        value={templateFormat}
-                        onChange={(value) => setTemplateFormat(value)}
-                        options={[
-                            { label: 'CSV', value: 'csv' },
-                            { label: 'XLSX', value: 'xlsx' },
-                        ]}
-                        style={{ width: 160 }}
-                    />
                 </Space>
             </Modal>
         </div>

@@ -9,7 +9,7 @@ import './AuditTrailPage.css';
 
 const { Title } = Typography;
 
-type ExportType = 'csv' | 'xlsx' | 'pdf';
+type ExportType = 'csv' | 'pdf';
 
 const AuditTrailPage = () => {
     const { data: logs, isLoading, isFetching, refetch } = useQuery({
@@ -129,43 +129,6 @@ const AuditTrailPage = () => {
         URL.revokeObjectURL(url);
     };
 
-    const handleExportXlsx = () => {
-        const headers = ['Actor', 'User ID', 'Action', 'Timestamp', 'IP Address'];
-        const rows = filteredLogs.map((row: any) => [
-            row.actor?.employee_name || 'N/A',
-            row.actor?.user_id || row.actor_user_id || 'N/A',
-            row.action || 'N/A',
-            row.created_at ? new Date(row.created_at).toLocaleString() : 'N/A',
-            row.ip_address || 'N/A',
-        ]);
-        const xmlRows = [headers, ...rows]
-            .map((line) => `
-                <Row>
-                    ${line.map((value: string | number) => `<Cell><Data ss:Type="String">${String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;')}</Data></Cell>`).join('')}
-                </Row>
-            `)
-            .join('');
-        const xml = `<?xml version="1.0"?>
-<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
- xmlns:o="urn:schemas-microsoft-com:office:office"
- xmlns:x="urn:schemas-microsoft-com:office:excel"
- xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
- xmlns:html="http://www.w3.org/TR/REC-html40">
- <Worksheet ss:Name="Audit Logs">
-  <Table>${xmlRows}</Table>
- </Worksheet>
-</Workbook>`;
-        const blob = new Blob([xml], { type: 'application/vnd.ms-excel' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.setAttribute('download', 'audit-logs.xlsx');
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        URL.revokeObjectURL(url);
-    };
-
     const handleExportPdf = () => {
         const rowsHtml = filteredLogs
             .map((row: any) => `
@@ -223,10 +186,6 @@ const AuditTrailPage = () => {
     const handleExport = () => {
         if (exportType === 'csv') {
             handleExportCsv();
-            return;
-        }
-        if (exportType === 'xlsx') {
-            handleExportXlsx();
             return;
         }
         handleExportPdf();
@@ -381,7 +340,6 @@ const AuditTrailPage = () => {
                         onChange={(event) => setExportType(event.target.value)}
                         options={[
                             { label: 'CSV', value: 'csv' },
-                            { label: 'XLSX', value: 'xlsx' },
                             { label: 'PDF', value: 'pdf' },
                         ]}
                     />

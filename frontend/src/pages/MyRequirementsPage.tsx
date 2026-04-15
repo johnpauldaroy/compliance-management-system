@@ -1,11 +1,12 @@
-import { List, Card, Button, Tag, Space, Typography, Drawer, Descriptions, Upload, message, Modal, Form, Input, Select, Collapse, Tooltip, DatePicker } from 'antd';
+import { List, Card, Button, Tag, Space, Typography, Drawer, Descriptions, Upload, message, Modal, Form, Input, Select, Collapse, Tooltip, DatePicker, Empty } from 'antd';
 import { UploadOutlined, ClockCircleOutlined, FileTextOutlined, EyeOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import dayjs from 'dayjs';
 import { requirementService, uploadService } from '../services/apiService';
 import { authService } from '../services/authService';
-import type { Requirement, Upload as UploadRecord, User } from '../types';
+import type { Requirement, RequirementAssignment, Upload as UploadFileRecord, UploadSubmission, User } from '../types';
+import type { UploadFile } from 'antd/es/upload/interface';
 import './MyRequirementsPage.css';
 
 const { Text, Title } = Typography;
@@ -45,6 +46,23 @@ const toPhDateKey = (value?: string | null) => {
     return `${map.year}-${map.month}-${map.day}`;
 };
 
+const toDeadlineDayjs = (value?: string | null) => {
+    if (!value) {
+        return null;
+    }
+    const raw = value.includes('T') ? value : `${value}T00:00:00+08:00`;
+    const parsed = dayjs(raw);
+    if (parsed.isValid()) {
+        return parsed;
+    }
+    const fallbackKey = toPhDateKey(value);
+    if (!fallbackKey) {
+        return null;
+    }
+    const fallback = dayjs(fallbackKey);
+    return fallback.isValid() ? fallback : null;
+};
+
 type MeResponse = { user: User };
 
 const MyRequirementsPage = () => {
@@ -53,8 +71,11 @@ const MyRequirementsPage = () => {
     const [selectedRequirement, setSelectedRequirement] = useState<Requirement | null>(null);
     const [uploadModalOpen, setUploadModalOpen] = useState(false);
     const [uploadRequirementId, setUploadRequirementId] = useState<number | null>(null);
-    const [uploadFile, setUploadFile] = useState<File | null>(null);
+    const [uploadFiles, setUploadFiles] = useState<UploadFile[]>([]);
     const [isUploading, setIsUploading] = useState(false);
+    const [filesModalOpen, setFilesModalOpen] = useState(false);
+    const [activeFiles, setActiveFiles] = useState<UploadFileRecord[]>([]);
+    const [activeSubmissionId, setActiveSubmissionId] = useState<number | null>(null);
     const { data: requirements, isLoading, error: requirementsError } = useQuery<Requirement[]>({
         queryKey: ['my-requirements'],
         queryFn: () => requirementService.getMine(),
@@ -107,14 +128,50 @@ const MyRequirementsPage = () => {
         return 'warning';
     };
 
-    const handleViewUpload = async (uploadId: number) => {
+    const handleViewUpload = async (submissionId: number, uploadId: number) => {
         try {
-            const { url } = await uploadService.getSignedUrl(uploadId, true);
+            const { url } = await uploadService.getSignedUrl(submissionId, uploadId, true);
             window.open(url, '_blank', 'noopener,noreferrer');
         } catch (error: any) {
             message.error(error.response?.data?.message || 'Failed to open file.');
         }
     };
+
+    const getFileName = (file?: UploadFileRecord | null) => {
+        const original = file?.original_file_name;
+        if (original) {
+            return original;
+        }
+        const path = file?.doc_file;
+        if (!path) {
+            return 'View file';
+        }
+        const parts = path.split('/');
+        return parts[parts.length - 1] || 'View file';
+    };
+
+    const openFilesModal = (submissionId: number, files: UploadFileRecord[]) => {
+        setActiveSubmissionId(submissionId);
+        setActiveFiles(files || []);
+        setFilesModalOpen(true);
+    };
+
+    const getOrderedAssignments = (assignments: RequirementAssignment[], isSequential: boolean) => {
+        if (!isSequential) {
+            return assignments;
+        }
+        return [...assignments].sort((a, b) => {
+            const aOrder = a.sequence_order ?? Number.MAX_SAFE_INTEGER;
+            const bOrder = b.sequence_order ?? Number.MAX_SAFE_INTEGER;
+            if (aOrder !== bOrder) {
+                return aOrder - bOrder;
+            }
+            return (a.id || 0) - (b.id || 0);
+        });
+    };
+
+    const getActiveSequentialAssignment = (assignments: RequirementAssignment[]) =>
+        assignments.find((assignment) => assignment.compliance_status !== 'APPROVED');
 
     return (
         <div className="myreq-page">
@@ -175,7 +232,7 @@ const MyRequirementsPage = () => {
                 className="requirements-drawer"
             >
                 {(() => {
-                    const data = detailData || selectedRequirement;
+                                    const data = detailData || selectedRequirement;
                     if (isDetailLoading) {
                         return <Text type="secondary">Loading...</Text>;
                     }
@@ -217,24 +274,66 @@ const MyRequirementsPage = () => {
                             <div style={{ marginTop: 24 }}>
                                 <Title level={5}>Uploads</Title>
                                 {(() => {
-                                    const uploads = data.uploads ?? [];
+                                    const submissions = data.submissions ?? [];
                                     const deadlineKey = toPhDateKey(data.deadline);
                                     const currentUserId = meData?.user?.id;
+                                    const assignmentSource = detailData || data;
+                                    const isSequential = assignmentSource?.assignment_mode === 'sequential';
+                                    const orderedAssignments = isSequential
+                                        ? [...(assignmentSource?.assignments || [])].sort((a, b) => {
+                                            const aOrder = a.sequence_order ?? Number.MAX_SAFE_INTEGER;
+                                            const bOrder = b.sequence_order ?? Number.MAX_SAFE_INTEGER;
+                                            if (aOrder !== bOrder) {
+                                                return aOrder - bOrder;
+                                            }
+                                            return (a.id || 0) - (b.id || 0);
+                                        })
+                                        : (assignmentSource?.assignments || []);
+                                    const activeAssignment = isSequential
+                                        ? orderedAssignments.find((assignment) =>
+                                            assignment.compliance_status !== 'APPROVED'
+                                        )
+                                        : null;
+                                    const isActiveForUser = !isSequential
+                                        ? true
+                                        : Boolean(detailData) && activeAssignment?.assigned_to_user_id === currentUserId;
+                                    const isSubmissionForCurrentUser = (submission: UploadSubmission, userId?: number) => {
+                                        if (!userId) {
+                                            return false;
+                                        }
+                                        return submission.uploaded_by_user_id === userId
+                                            || submission.assignment?.assigned_to_user_id === userId;
+                                    };
                                     const approvedForDeadline = Boolean(
                                         deadlineKey
                                             && currentUserId
-                                            && uploads.some((upload) =>
-                                                upload.approval_status === 'APPROVED'
-                                                && upload.uploaded_by_user_id === currentUserId
-                                                && toPhDateKey(upload.deadline_at_upload) === deadlineKey
+                                            && submissions.some((submission) =>
+                                                submission.approval_status === 'APPROVED'
+                                                && isSubmissionForCurrentUser(submission, currentUserId)
+                                                && toPhDateKey(submission.deadline_at_upload) === deadlineKey
+                                            )
+                                    );
+                                    const pendingForDeadline = Boolean(
+                                        deadlineKey
+                                            && currentUserId
+                                            && submissions.some((submission) =>
+                                                submission.approval_status === 'PENDING'
+                                                && isSubmissionForCurrentUser(submission, currentUserId)
+                                                && toPhDateKey(submission.deadline_at_upload) === deadlineKey
                                             )
                                     );
                                     const uploadTooltip = !isAdmin && !deadlineKey
                                         ? 'Set a deadline to enable uploads.'
-                                        : !isAdmin && approvedForDeadline
-                                            ? 'An approved upload already exists for this deadline.'
-                                            : '';
-                                    const uploadDisabled = !isAdmin && (!deadlineKey || approvedForDeadline);
+                                        : !isAdmin && pendingForDeadline
+                                            ? 'You have a pending submission. We will inform you of the approval or rejection via email.'
+                                            : !isAdmin && !isActiveForUser && approvedForDeadline
+                                                ? 'You have already complied with this requirement.'
+                                                : !isAdmin && !isActiveForUser
+                                                    ? 'This requirement is sequential. Please wait for the preceding active Person-in-Charge to comply before you. We will send an email when it is your turn.'
+                                                    : !isAdmin && approvedForDeadline
+                                                        ? 'You have already complied with this requirement.'
+                                                        : '';
+                                    const uploadDisabled = !isAdmin && (!deadlineKey || approvedForDeadline || pendingForDeadline || !isActiveForUser);
                                     return (
                                         <>
                                             {uploadDisabled ? (
@@ -244,10 +343,19 @@ const MyRequirementsPage = () => {
                                                         icon={<UploadOutlined />}
                                                         onClick={() => {
                                                             setUploadRequirementId(data.id);
-                                                            setUploadFile(null);
+                                                            setUploadFiles([]);
                                                             form.resetFields();
-                                                            if (isAdmin && data.deadline) {
-                                                                form.setFieldsValue({ deadline_at_upload: dayjs(`${data.deadline}T00:00:00+08:00`) });
+                                                            const deadlineValue = toDeadlineDayjs(data.deadline);
+                                                            if (isAdmin && deadlineValue) {
+                                                                form.setFieldsValue({ deadline_at_upload: deadlineValue });
+                                                            }
+                                                            const assignments = detailData?.assignments || data.assignments || [];
+                                                            const isSequential = (detailData?.assignment_mode || data.assignment_mode) === 'sequential';
+                                                            const orderedAssignments = getOrderedAssignments(assignments as RequirementAssignment[], isSequential);
+                                                            const activeSequential = isSequential ? getActiveSequentialAssignment(orderedAssignments) : null;
+                                                            const autoAssignmentId = activeSequential?.id || (orderedAssignments.length === 1 ? orderedAssignments[0].id : null);
+                                                            if (autoAssignmentId) {
+                                                                form.setFieldsValue({ assignment_id: autoAssignmentId });
                                                             }
                                                             setUploadModalOpen(true);
                                                         }}
@@ -263,10 +371,19 @@ const MyRequirementsPage = () => {
                                                     icon={<UploadOutlined />}
                                                     onClick={() => {
                                                         setUploadRequirementId(data.id);
-                                                        setUploadFile(null);
+                                                        setUploadFiles([]);
                                                         form.resetFields();
-                                                        if (isAdmin && data.deadline) {
-                                                            form.setFieldsValue({ deadline_at_upload: dayjs(`${data.deadline}T00:00:00+08:00`) });
+                                                        const deadlineValue = toDeadlineDayjs(data.deadline);
+                                                        if (isAdmin && deadlineValue) {
+                                                            form.setFieldsValue({ deadline_at_upload: deadlineValue });
+                                                        }
+                                                        const assignments = detailData?.assignments || data.assignments || [];
+                                                        const isSequential = (detailData?.assignment_mode || data.assignment_mode) === 'sequential';
+                                                        const orderedAssignments = getOrderedAssignments(assignments as RequirementAssignment[], isSequential);
+                                                        const activeSequential = isSequential ? getActiveSequentialAssignment(orderedAssignments) : null;
+                                                        const autoAssignmentId = activeSequential?.id || (orderedAssignments.length === 1 ? orderedAssignments[0].id : null);
+                                                        if (autoAssignmentId) {
+                                                            form.setFieldsValue({ assignment_id: autoAssignmentId });
                                                         }
                                                         setUploadModalOpen(true);
                                                     }}
@@ -275,16 +392,16 @@ const MyRequirementsPage = () => {
                                                     Upload
                                                 </Button>
                                             )}
-                                            {(!uploads.length) ? (
+                                            {(!submissions.length) ? (
                                                 <div style={{ textAlign: 'center', marginTop: 8 }}>
                                                     <Text type="secondary">No uploads yet.</Text>
                                                 </div>
                                             ) : null}
-                                            {uploads.length ? (() => {
-                                                const grouped = uploads.reduce<Record<string, UploadRecord[]>>((acc, upload) => {
-                                                    const key = upload.deadline_at_upload ? toPhDateKey(upload.deadline_at_upload) : 'no-deadline';
+                                            {submissions.length ? (() => {
+                                                const grouped = submissions.reduce<Record<string, UploadSubmission[]>>((acc, submission) => {
+                                                    const key = submission.deadline_at_upload ? toPhDateKey(submission.deadline_at_upload) : 'no-deadline';
                                                     acc[key] = acc[key] || [];
-                                                    acc[key].push(upload);
+                                                    acc[key].push(submission);
                                                     return acc;
                                                 }, {});
                                                 const items = Object.entries(grouped)
@@ -301,42 +418,107 @@ const MyRequirementsPage = () => {
                                                         key,
                                                         label,
                                                         children: (
-                                                            <List<UploadRecord>
+                                                            <List<UploadSubmission>
                                                                 dataSource={items}
-                                                                renderItem={(upload) => (
+                                                                renderItem={(submission) => (
                                                                     <List.Item>
                                                                 <Card style={{ width: '100%' }}>
-                                                                    <Space size="large">
-                                                                        <div>
-                                                                            <Text strong>{upload.upload_id}</Text>
-                                                                            <div>Uploaded by: {upload.uploader?.employee_name || upload.uploader_email}</div>
-                                                                            <div>Uploaded at: {upload.upload_date ? new Date(upload.upload_date).toLocaleString() : 'N/A'}</div>
-                                                                            {upload.approval_status !== 'PENDING' ? (
-                                                                                <div>
-                                                                                    {upload.approval_status === 'APPROVED' ? 'Approved' : 'Rejected'} at:{' '}
-                                                                                    {upload.status_change_on ? new Date(upload.status_change_on).toLocaleString() : 'N/A'}
+                                                                    <div className="myreq-submission-card">
+                                                                        <div className="myreq-submission-header">
+                                                                            <Text strong>{submission.submission_id}</Text>
+                                                                            <Tag color={submission.approval_status === 'APPROVED' ? 'success' : submission.approval_status === 'REJECTED' ? 'error' : 'processing'}>
+                                                                                {submission.approval_status}
+                                                                            </Tag>
+                                                                        </div>
+                                                                        <div className="myreq-submission-grid">
+                                                                            <div className="myreq-submission-item">
+                                                                                <span className="myreq-submission-label">Uploaded by</span>
+                                                                                <span className="myreq-submission-value">
+                                                                                    {submission.uploader?.employee_name || submission.uploader_email}
+                                                                                </span>
+                                                                            </div>
+                                                                            {(() => {
+                                                                                const uploadedFor = submission.assignment?.user?.employee_name;
+                                                                                const assignedUserId = submission.assignment?.assigned_to_user_id;
+                                                                                const showUploadedFor = Boolean(
+                                                                                    uploadedFor
+                                                                                    && assignedUserId
+                                                                                    && assignedUserId !== submission.uploaded_by_user_id
+                                                                                );
+                                                                                if (!showUploadedFor) {
+                                                                                    return null;
+                                                                                }
+                                                                                return (
+                                                                                    <div className="myreq-submission-item">
+                                                                                        <span className="myreq-submission-label">Uploaded for</span>
+                                                                                        <span className="myreq-submission-value">{uploadedFor}</span>
+                                                                                    </div>
+                                                                                );
+                                                                            })()}
+                                                                            <div className="myreq-submission-item">
+                                                                                <span className="myreq-submission-label">Uploaded at</span>
+                                                                                <span className="myreq-submission-value">
+                                                                                    {submission.upload_date ? new Date(submission.upload_date).toLocaleString() : 'N/A'}
+                                                                                </span>
+                                                                            </div>
+                                                                            {submission.deadline_at_upload ? (
+                                                                                <div className="myreq-submission-item">
+                                                                                    <span className="myreq-submission-label">Submitted for Deadline Set On</span>
+                                                                                    <span className="myreq-submission-value">
+                                                                                        {formatPhDate(submission.deadline_at_upload)}
+                                                                                    </span>
                                                                                 </div>
                                                                             ) : null}
-                                                                            {upload.uploaded_by_user_id === meData?.user?.id ? (
+                                                                            {submission.approval_status !== 'PENDING' ? (
+                                                                                <div className="myreq-submission-item">
+                                                                                    <span className="myreq-submission-label">
+                                                                                        {submission.approval_status === 'APPROVED' ? 'Approved at' : 'Rejected at'}
+                                                                                    </span>
+                                                                                    <span className="myreq-submission-value">
+                                                                                        {submission.status_change_on ? new Date(submission.status_change_on).toLocaleString() : 'N/A'}
+                                                                                    </span>
+                                                                                </div>
+                                                                            ) : null}
+                                                                            {submission.uploaded_by_user_id === meData?.user?.id ? (
                                                                                 <>
-                                                                                    {upload.comments ? <div>Your comment: {upload.comments}</div> : null}
-                                                                                    {upload.admin_remarks ? <div>Admin remarks: {upload.admin_remarks}</div> : null}
+                                                                                    {submission.comments ? (
+                                                                                        <div className="myreq-submission-item myreq-submission-item--full">
+                                                                                            <span className="myreq-submission-label">Your comment</span>
+                                                                                            <span className="myreq-submission-value">{submission.comments}</span>
+                                                                                        </div>
+                                                                                    ) : null}
+                                                                                    {submission.admin_remarks ? (
+                                                                                        <div className="myreq-submission-item myreq-submission-item--full">
+                                                                                            <span className="myreq-submission-label">Admin remarks</span>
+                                                                                            <span className="myreq-submission-value">{submission.admin_remarks}</span>
+                                                                                        </div>
+                                                                                    ) : null}
                                                                                 </>
                                                                             ) : null}
                                                                         </div>
-                                                                        <Tag color={upload.approval_status === 'APPROVED' ? 'success' : upload.approval_status === 'REJECTED' ? 'error' : 'processing'}>
-                                                                            {upload.approval_status}
-                                                                        </Tag>
-                                                                        {upload.uploaded_by_user_id === meData?.user?.id ? (
-                                                                            <Button
-                                                                                size="small"
-                                                                                icon={<EyeOutlined />}
-                                                                                onClick={() => handleViewUpload(upload.id)}
-                                                                            >
-                                                                                View file
-                                                                            </Button>
-                                                                        ) : null}
-                                                                    </Space>
+                                                                        <div className="myreq-submission-actions">
+                                                                            {submission.files?.length ? (() => {
+                                                                                const canViewSubmissionFiles = Boolean(
+                                                                                    isAdmin
+                                                                                    || submission.uploaded_by_user_id === currentUserId
+                                                                                    || submission.approval_status === 'APPROVED'
+                                                                                );
+                                                                                if (!canViewSubmissionFiles) {
+                                                                                    return null;
+                                                                                }
+                                                                                return (
+                                                                                    <Button
+                                                                                        size="small"
+                                                                                        className="view-files-btn"
+                                                                                        icon={<EyeOutlined />}
+                                                                                        onClick={() => openFilesModal(submission.id, submission.files as UploadFileRecord[])}
+                                                                                    >
+                                                                                        View Files ({submission.files.length})
+                                                                                    </Button>
+                                                                                );
+                                                                            })() : null}
+                                                                        </div>
+                                                                    </div>
                                                                 </Card>
                                                             </List.Item>
                                                         )}
@@ -374,13 +556,19 @@ const MyRequirementsPage = () => {
                             message.error('No requirement selected.');
                             return;
                         }
-                        if (!uploadFile) {
-                            message.error('Please select a file to upload.');
+                        if (!uploadFiles.length) {
+                            message.error('Please select at least one file to upload.');
                             return;
                         }
                         const formData = new FormData();
                         formData.append('requirement_id', String(uploadRequirementId));
-                        formData.append('doc_file', uploadFile);
+                        uploadFiles.forEach((file) => {
+                            const rawFile = (file as any).originFileObj || file;
+                            formData.append('doc_file[]', rawFile as File);
+                        });
+                        if (values.assignment_id) {
+                            formData.append('assignment_id', String(values.assignment_id));
+                        }
                         if (values.comments) {
                             formData.append('comments', values.comments);
                         }
@@ -413,19 +601,59 @@ const MyRequirementsPage = () => {
                     <Form.Item label="Document File" required>
                         <Upload
                             accept="application/pdf,.pdf"
+                            multiple
+                            fileList={uploadFiles}
                             beforeUpload={(file) => {
                                 if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
                                     message.error('Only PDF files are allowed.');
                                     return Upload.LIST_IGNORE;
                                 }
-                                setUploadFile(file);
+                                const maxSizeBytes = 150 * 1024 * 1024;
+                                if (file.size > maxSizeBytes) {
+                                    message.error('Each file must be 150MB or less.');
+                                    return Upload.LIST_IGNORE;
+                                }
                                 return false;
                             }}
-                            maxCount={1}
+                            onChange={(info) => {
+                                setUploadFiles(info.fileList.map((item) => ({ ...item, status: 'done' })));
+                            }}
+                            onRemove={(file) => {
+                                setUploadFiles((prev) => prev.filter((item) => item.uid !== file.uid));
+                            }}
                         >
                             <Button icon={<UploadOutlined />} disabled={isUploading}>Select File</Button>
                         </Upload>
                     </Form.Item>
+                    {canEditApproval ? (() => {
+                        const assignments = detailData?.assignments || selectedRequirement?.assignments || [];
+                        if (!assignments.length) {
+                            return null;
+                        }
+                        const isSequential = (detailData?.assignment_mode || selectedRequirement?.assignment_mode) === 'sequential';
+                        const orderedAssignments = getOrderedAssignments(assignments as RequirementAssignment[], isSequential);
+                        const activeSequential = isSequential ? getActiveSequentialAssignment(orderedAssignments) : null;
+                        const selectable = isSequential
+                            ? (activeSequential ? [activeSequential] : [])
+                            : orderedAssignments;
+                        const requireSelection = selectable.length > 1;
+                        return (
+                            <Form.Item
+                                label="Upload for PIC"
+                                name="assignment_id"
+                                rules={requireSelection ? [{ required: true, message: 'Select a PIC.' }] : []}
+                            >
+                                <Select
+                                    options={selectable.map((assignment) => ({
+                                        value: assignment.id,
+                                        label: assignment.user?.employee_name || `PIC #${assignment.assigned_to_user_id}`,
+                                    }))}
+                                    placeholder={isSequential ? 'Active PIC only' : 'Select a PIC'}
+                                    disabled={selectable.length === 1}
+                                />
+                            </Form.Item>
+                        );
+                    })() : null}
                     <Form.Item label="Comments" name="comments">
                         <Input.TextArea rows={3} />
                     </Form.Item>
@@ -449,6 +677,37 @@ const MyRequirementsPage = () => {
                         </>
                     ) : null}
                 </Form>
+            </Modal>
+            <Modal
+                title="Uploaded Files"
+                open={filesModalOpen}
+                onCancel={() => setFilesModalOpen(false)}
+                footer={null}
+                destroyOnClose
+            >
+                {activeFiles.length ? (
+                    <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                        {activeFiles.map((file) => (
+                            <div key={file.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span>{getFileName(file)}</span>
+                                <Button
+                                    size="small"
+                                    className="view-file-btn"
+                                    icon={<EyeOutlined />}
+                                    onClick={() => {
+                                        if (activeSubmissionId) {
+                                            handleViewUpload(activeSubmissionId, file.id);
+                                        }
+                                    }}
+                                >
+                                    View
+                                </Button>
+                            </div>
+                        ))}
+                    </Space>
+                ) : (
+                    <Empty description="No files found" />
+                )}
             </Modal>
         </div>
     );

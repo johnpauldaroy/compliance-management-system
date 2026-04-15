@@ -18,8 +18,11 @@ const ApprovalsPage = () => {
     const [activeId, setActiveId] = useState<number | null>(null);
     const [activeRequirementName, setActiveRequirementName] = useState<string>('');
     const [detailRequirementId, setDetailRequirementId] = useState<number | null>(null);
-    const { data: uploads, isLoading } = useQuery({
-        queryKey: ['uploads'],
+    const [filesModalOpen, setFilesModalOpen] = useState(false);
+    const [activeFiles, setActiveFiles] = useState<any[]>([]);
+    const [activeSubmissionId, setActiveSubmissionId] = useState<number | null>(null);
+    const { data: submissions, isLoading } = useQuery({
+        queryKey: ['submissions'],
         queryFn: uploadService.getAll,
     });
     const { data: meData } = useQuery({
@@ -36,7 +39,7 @@ const ApprovalsPage = () => {
         mutationFn: ({ id, remarks }: { id: number, remarks: string }) => uploadService.approve(id, remarks),
         onSuccess: () => {
             message.success(activeRequirementName ? `Approved: ${activeRequirementName}` : 'Approved successfully');
-            queryClient.invalidateQueries({ queryKey: ['uploads'] });
+            queryClient.invalidateQueries({ queryKey: ['submissions'] });
             setModalOpen(false);
             setActiveId(null);
         },
@@ -49,7 +52,7 @@ const ApprovalsPage = () => {
         mutationFn: ({ id, remarks }: { id: number, remarks: string }) => uploadService.reject(id, remarks),
         onSuccess: () => {
             message.success(activeRequirementName ? `Rejected: ${activeRequirementName}` : 'Rejected successfully');
-            queryClient.invalidateQueries({ queryKey: ['uploads'] });
+            queryClient.invalidateQueries({ queryKey: ['submissions'] });
             setModalOpen(false);
             setActiveId(null);
         },
@@ -60,20 +63,39 @@ const ApprovalsPage = () => {
 
     const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('pending');
 
-    const filteredUploads = (uploads || []).filter((upload: any) => {
+    const filteredUploads = (submissions || []).filter((submission: any) => {
         if (statusFilter === 'all') {
             return true;
         }
-        return String(upload.approval_status || '').toUpperCase() === statusFilter.toUpperCase();
+        return String(submission.approval_status || '').toUpperCase() === statusFilter.toUpperCase();
     });
 
-    const handleViewFile = async (uploadId: number) => {
+    const handleViewFile = async (submissionId: number, uploadId: number) => {
         try {
-            const { url } = await uploadService.getSignedUrl(uploadId, true);
+            const { url } = await uploadService.getSignedUrl(submissionId, uploadId, true);
             window.open(url, '_blank', 'noopener,noreferrer');
         } catch (error: any) {
             message.error(error.response?.data?.message || 'Failed to open file.');
         }
+    };
+
+    const getFileName = (file?: any) => {
+        const original = file?.original_file_name;
+        if (original) {
+            return original;
+        }
+        const path = file?.doc_file;
+        if (!path) {
+            return 'View file';
+        }
+        const parts = path.split('/');
+        return parts[parts.length - 1] || 'View file';
+    };
+
+    const openFilesModal = (submissionId: number, files: any[]) => {
+        setActiveSubmissionId(submissionId);
+        setActiveFiles(files || []);
+        setFilesModalOpen(true);
     };
 
     const openDetails = (requirementId?: number | null) => {
@@ -110,6 +132,8 @@ const ApprovalsPage = () => {
             role?.name === 'Super Admin' || role?.name === 'Compliance & Admin Specialist'
         )
     );
+    const currentUserId = meData?.user?.id;
+    const isAdmin = canApprove;
 
     const columns: ColumnsType<any> = [
         {
@@ -142,27 +166,57 @@ const ApprovalsPage = () => {
             title: 'Status',
             dataIndex: 'approval_status',
             key: 'status',
-            render: (status) => (
-                <Tag color={
-                    status === 'APPROVED'
-                        ? 'green'
-                        : status === 'REJECTED'
-                            ? 'red'
-                            : 'gold'
-                }>
-                    {status || 'N/A'}
-                </Tag>
-            ),
+            render: (status, record) => {
+                const resolvedStatus = status || 'N/A';
+                const showStatusDate = record?.approval_status && record.approval_status !== 'PENDING';
+                const statusDate = showStatusDate
+                    ? (record.status_change_on ? new Date(record.status_change_on).toLocaleString() : 'N/A')
+                    : null;
+                return (
+                    <div className="approvals-status">
+                        <Tag color={
+                            resolvedStatus === 'APPROVED'
+                                ? 'green'
+                                : resolvedStatus === 'REJECTED'
+                                    ? 'red'
+                                    : 'gold'
+                        }>
+                            {resolvedStatus}
+                        </Tag>
+                        {statusDate ? (
+                            <div className="approvals-status-date">
+                                {resolvedStatus === 'APPROVED' ? 'Approved at: ' : 'Rejected at: '}{statusDate}
+                            </div>
+                        ) : null}
+                    </div>
+                );
+            },
         },
         {
-            title: 'Status Date',
-            dataIndex: 'status_change_on',
-            key: 'status_change_on',
-            render: (date, record) => {
-                if (!record?.approval_status || record.approval_status === 'PENDING') {
+            title: 'Files',
+            key: 'files',
+            render: (_, record) => {
+                if (!record.files?.length) {
                     return 'N/A';
                 }
-                return date ? new Date(date).toLocaleString() : 'N/A';
+                const canViewSubmissionFiles = Boolean(
+                    isAdmin
+                    || record.uploaded_by_user_id === currentUserId
+                    || record.approval_status === 'APPROVED'
+                );
+                if (!canViewSubmissionFiles) {
+                    return 'N/A';
+                }
+                return (
+                    <Button
+                        size="small"
+                        className="view-files-btn"
+                        icon={<EyeOutlined />}
+                        onClick={() => openFilesModal(record.id, record.files)}
+                    >
+                        View Files ({record.files.length})
+                    </Button>
+                );
             },
         },
         {
@@ -171,11 +225,6 @@ const ApprovalsPage = () => {
             align: 'right',
             render: (_, record) => (
                 <Space>
-                    <Tooltip title="View file">
-                        <Button type="link" icon={<EyeOutlined />} onClick={() => handleViewFile(record.id)}>
-                            View File
-                        </Button>
-                    </Tooltip>
                     <Tooltip title="View requirement details">
                         <Button
                             type="text"
@@ -311,49 +360,150 @@ const ApprovalsPage = () => {
                             </Descriptions.Item>
                         </Descriptions>
                         <div className="approvals-detail-section">
-                            <Typography.Title level={5}>Past Uploads</Typography.Title>
-                            {requirementDetail?.uploads && requirementDetail.uploads.length > 0 ? (
+                            <Typography.Title level={5}>Past Submissions</Typography.Title>
+                            {requirementDetail?.submissions && requirementDetail.submissions.length > 0 ? (
                                 <Space direction="vertical" size={12} className="approvals-upload-list">
-                                    {requirementDetail.uploads.map((upload: any) => (
-                                        <div key={upload.id} className="approvals-upload-item">
+                                    {requirementDetail.submissions.map((submission: any) => (
+                                        <div key={submission.id} className="approvals-upload-item">
                                             <div className="approvals-upload-row">
                                                 <div>
-                                                    <div className="approvals-upload-title">{upload.upload_id}</div>
+                                                    <div className="approvals-upload-title">{submission.submission_id}</div>
                                                     <div className="approvals-upload-subtitle">
-                                                        {upload.uploader?.employee_name || upload.uploader_email || 'Unknown'} ·{' '}
-                                                        {upload.upload_date ? new Date(upload.upload_date).toLocaleString() : 'N/A'}
+                                                        {submission.uploader?.employee_name || submission.uploader_email || 'Unknown'} ·{' '}
+                                                        {submission.upload_date ? new Date(submission.upload_date).toLocaleString() : 'N/A'}
                                                     </div>
                                                 </div>
                                                 <Tag color={
-                                                    upload.approval_status === 'APPROVED'
+                                                    submission.approval_status === 'APPROVED'
                                                         ? 'green'
-                                                        : upload.approval_status === 'REJECTED'
+                                                        : submission.approval_status === 'REJECTED'
                                                             ? 'red'
                                                             : 'gold'
                                                 }>
-                                                    {upload.approval_status}
+                                                    {submission.approval_status}
                                                 </Tag>
                                             </div>
-                                            <Space>
-                                                <Button size="small" onClick={() => handleViewFile(upload.id)}>
-                                                    View file
-                                                </Button>
-                                                {upload.admin_remarks ? (
-                                                    <span className="approvals-upload-remarks">
-                                                        Remarks: {upload.admin_remarks}
-                                                    </span>
-                                                ) : null}
-                                            </Space>
+                                            <div className="approvals-submission-card">
+                                                <div className="approvals-submission-grid">
+                                                    <div className="approvals-submission-item">
+                                                        <span className="approvals-submission-label">Uploaded by</span>
+                                                        <span className="approvals-submission-value">
+                                                            {submission.uploader?.employee_name || submission.uploader_email || 'Unknown'}
+                                                        </span>
+                                                    </div>
+                                                    {(() => {
+                                                        const uploadedFor = submission.assignment?.user?.employee_name;
+                                                        const assignedUserId = submission.assignment?.assigned_to_user_id;
+                                                        const showUploadedFor = Boolean(
+                                                            uploadedFor
+                                                            && assignedUserId
+                                                            && assignedUserId !== submission.uploaded_by_user_id
+                                                        );
+                                                        if (!showUploadedFor) {
+                                                            return null;
+                                                        }
+                                                        return (
+                                                            <div className="approvals-submission-item">
+                                                                <span className="approvals-submission-label">Uploaded for</span>
+                                                                <span className="approvals-submission-value">{uploadedFor}</span>
+                                                            </div>
+                                                        );
+                                                    })()}
+                                                    <div className="approvals-submission-item">
+                                                        <span className="approvals-submission-label">Uploaded at</span>
+                                                        <span className="approvals-submission-value">
+                                                            {submission.upload_date ? new Date(submission.upload_date).toLocaleString() : 'N/A'}
+                                                        </span>
+                                                    </div>
+                                                    {submission.deadline_at_upload ? (
+                                                        <div className="approvals-submission-item">
+                                                            <span className="approvals-submission-label">Submitted for Deadline Set On</span>
+                                                            <span className="approvals-submission-value">
+                                                                {submission.deadline_at_upload ? new Date(submission.deadline_at_upload).toLocaleDateString() : 'N/A'}
+                                                            </span>
+                                                        </div>
+                                                    ) : null}
+                                                    {submission.approval_status !== 'PENDING' ? (
+                                                        <div className="approvals-submission-item">
+                                                            <span className="approvals-submission-label">
+                                                                {submission.approval_status === 'APPROVED' ? 'Approved at' : 'Rejected at'}
+                                                            </span>
+                                                            <span className="approvals-submission-value">
+                                                                {submission.status_change_on ? new Date(submission.status_change_on).toLocaleString() : 'N/A'}
+                                                            </span>
+                                                        </div>
+                                                    ) : null}
+                                                    {submission.admin_remarks ? (
+                                                        <div className="approvals-submission-item approvals-submission-item--full">
+                                                            <span className="approvals-submission-label">Admin remarks</span>
+                                                            <span className="approvals-submission-value">{submission.admin_remarks}</span>
+                                                        </div>
+                                                    ) : null}
+                                                </div>
+                                                <div className="approvals-submission-actions">
+                                                    {submission.files?.length ? (() => {
+                                                        const canViewSubmissionFiles = Boolean(
+                                                            isAdmin
+                                                            || submission.uploaded_by_user_id === currentUserId
+                                                            || submission.approval_status === 'APPROVED'
+                                                        );
+                                                        if (!canViewSubmissionFiles) {
+                                                            return null;
+                                                        }
+                                                        return (
+                                                            <Button
+                                                                size="small"
+                                                                className="view-files-btn"
+                                                                icon={<EyeOutlined />}
+                                                                onClick={() => openFilesModal(submission.id, submission.files)}
+                                                            >
+                                                                View Files ({submission.files.length})
+                                                            </Button>
+                                                        );
+                                                    })() : null}
+                                                </div>
+                                            </div>
                                         </div>
                                     ))}
                                 </Space>
-                            ) : (
-                                <Empty description="No uploads found" />
-                            )}
-                        </div>
-                    </>
+                ) : (
+                    <Empty description="No submissions found" />
                 )}
-            </Drawer>
+            </div>
+        </>
+    )}
+</Drawer>
+            <Modal
+                title="Uploaded Files"
+                open={filesModalOpen}
+                onCancel={() => setFilesModalOpen(false)}
+                footer={null}
+                destroyOnClose
+            >
+                {activeFiles.length ? (
+                    <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                        {activeFiles.map((file) => (
+                            <div key={file.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span>{getFileName(file)}</span>
+                                <Button
+                                    size="small"
+                                    className="view-file-btn"
+                                    icon={<EyeOutlined />}
+                                    onClick={() => {
+                                        if (activeSubmissionId) {
+                                            handleViewFile(activeSubmissionId, file.id);
+                                        }
+                                    }}
+                                >
+                                    View
+                                </Button>
+                            </div>
+                        ))}
+                    </Space>
+                ) : (
+                    <Empty description="No files found" />
+                )}
+            </Modal>
         </div>
     );
 };

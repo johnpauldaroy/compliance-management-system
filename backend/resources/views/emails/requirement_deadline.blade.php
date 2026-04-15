@@ -9,6 +9,8 @@
 
     @if ($context === 'updated')
         <p>The deadline for a compliance requirement assigned to you has been updated.</p>
+    @elseif ($context === 'activated')
+        <p>The preceding Person-in-Charge has been approved. It is now your turn to submit your compliance documents.</p>
     @else
         <p>A compliance requirement has been assigned to you.</p>
     @endif

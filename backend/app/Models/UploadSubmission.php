@@ -5,17 +5,14 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
-class Upload extends Model
+class UploadSubmission extends Model
 {
     use HasFactory;
 
     protected $fillable = [
-        'upload_id',
         'submission_id',
         'requirement_id',
         'assignment_id',
-        'doc_file',
-        'original_file_name',
         'uploaded_by_user_id',
         'uploader_email',
         'upload_date',
@@ -48,8 +45,8 @@ class Upload extends Model
         return $this->belongsTo(User::class, 'uploaded_by_user_id');
     }
 
-    public function submission()
+    public function files()
     {
-        return $this->belongsTo(UploadSubmission::class, 'submission_id');
+        return $this->hasMany(Upload::class, 'submission_id');
     }
 }

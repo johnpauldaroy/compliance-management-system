@@ -13,6 +13,7 @@ class RequirementAssignment extends Model
         'assignment_id',
         'requirement_id',
         'assigned_to_user_id',
+        'sequence_order',
         'deadline',
         'compliance_status',
         'last_submitted_at',
@@ -23,6 +24,7 @@ class RequirementAssignment extends Model
         'deadline' => 'date',
         'last_submitted_at' => 'datetime',
         'last_approved_at' => 'datetime',
+        'sequence_order' => 'integer',
     ];
 
     public function requirement()
@@ -38,5 +40,10 @@ class RequirementAssignment extends Model
     public function uploads()
     {
         return $this->hasMany(Upload::class, 'assignment_id');
+    }
+
+    public function submissions()
+    {
+        return $this->hasMany(UploadSubmission::class, 'assignment_id');
     }
 }

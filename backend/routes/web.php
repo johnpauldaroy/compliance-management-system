@@ -10,6 +10,6 @@ Route::get('/login', function () {
     return response()->json(['message' => 'Unauthenticated.'], 401);
 })->name('login');
 
-Route::get('/uploads/{upload}/signed-download', [\App\Http\Controllers\UploadController::class, 'signedDownload'])
+Route::get('/submissions/{submission}/files/{upload}/signed-download', [\App\Http\Controllers\UploadSubmissionController::class, 'fileSignedDownload'])
     ->middleware('signed')
-    ->name('uploads.signed-download');
+    ->name('submissions.files.signed-download');

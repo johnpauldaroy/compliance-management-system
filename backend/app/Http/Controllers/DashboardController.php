@@ -5,7 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Agency;
 use App\Models\Requirement;
 use App\Models\AuditLog;
-use App\Models\Upload;
+use App\Models\UploadSubmission;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Carbon\Carbon;
@@ -41,7 +41,7 @@ class DashboardController extends Controller
                     });
             })->count();
 
-        $forApprovalCount = Upload::where('approval_status', 'PENDING')->count();
+        $forApprovalCount = UploadSubmission::where('approval_status', 'PENDING')->count();
 
         $complianceRate = $totalRequirements > 0
             ? round(($compliantCount / $totalRequirements) * 100, 1)
@@ -129,7 +129,7 @@ class DashboardController extends Controller
         $userId = $user?->id;
         $isPic = $user && $this->isPicUser($user);
 
-        $requirementsQuery = Requirement::with(['assignments.user', 'uploads'])
+        $requirementsQuery = Requirement::with(['assignments.user', 'submissions'])
             ->whereNotNull('deadline');
 
         if ($isPic && $userId) {
@@ -152,8 +152,36 @@ class DashboardController extends Controller
             $status = $isPic && $userId
                 ? $this->summarizeCalendarStatusForUser($requirement, $userId)
                 : $this->summarizeCalendarStatus($requirement);
+            $picDetails = $requirement->assignments
+                ->map(function ($assignment) use ($requirement, $dateKey) {
+                    $user = $assignment->user;
+                    $latestSubmission = $this->filterSubmissionsByDeadline(
+                        $requirement->submissions,
+                        $dateKey,
+                        $assignment->id
+                    )
+                        ->sortByDesc(function ($submission) {
+                            $timestamp = $submission->upload_date ?? $submission->created_at;
+                            return $timestamp ? Carbon::parse($timestamp)->timestamp : 0;
+                        })
+                        ->first();
+                    $submittedAt = $latestSubmission?->upload_date ?? $latestSubmission?->created_at ?? null;
+                    $approvedAt = $latestSubmission?->approval_status === 'APPROVED'
+                        ? ($latestSubmission?->status_change_on ?? $submittedAt)
+                        : null;
+                    return [
+                        'id' => $assignment->id,
+                        'user_id' => $assignment->assigned_to_user_id,
+                        'name' => $user?->employee_name ?: $user?->email ?: 'Unknown',
+                        'status' => $this->summarizeAssignmentStatusForDeadline($requirement, $assignment, $dateKey),
+                        'submitted_at' => $submittedAt,
+                        'approved_at' => $approvedAt,
+                    ];
+                })
+                ->values();
             $byDate[$dateKey][] = [
                 'id' => $requirement->id,
+                'req_id' => $requirement->req_id,
                 'name' => $requirement->requirement,
                 'status' => $status,
                 'pic' => $requirement->assignments
@@ -162,6 +190,7 @@ class DashboardController extends Controller
                     ->unique()
                     ->values()
                     ->join(', '),
+                'pic_details' => $picDetails,
             ];
         }
 
@@ -199,8 +228,8 @@ class DashboardController extends Controller
         }
 
         $deadlineKey = Carbon::parse($requirement->deadline)->toDateString();
-        $uploads = $requirement->uploads->where('deadline_at_upload', $deadlineKey);
-        if ($uploads->where('approval_status', 'PENDING')->count() > 0) {
+        $submissions = $this->filterSubmissionsByDeadline($requirement->submissions, $deadlineKey);
+        if ($submissions->where('approval_status', 'PENDING')->count() > 0) {
             return 'for_approval';
         }
 
@@ -235,11 +264,13 @@ class DashboardController extends Controller
         }
 
         $deadlineKey = Carbon::parse($requirement->deadline)->toDateString();
-        $userUploads = $requirement->uploads
-            ->where('assignment_id', $assignment->id)
-            ->where('deadline_at_upload', $deadlineKey);
+        $userSubmissions = $this->filterSubmissionsByDeadline(
+            $requirement->submissions,
+            $deadlineKey,
+            $assignment->id
+        );
 
-        if ($userUploads->where('approval_status', 'PENDING')->count() > 0) {
+        if ($userSubmissions->where('approval_status', 'PENDING')->count() > 0) {
             return 'for_approval';
         }
 
@@ -256,6 +287,50 @@ class DashboardController extends Controller
         }
 
         return 'pending';
+    }
+
+    private function summarizeAssignmentStatusForDeadline($requirement, $assignment, string $deadlineKey): string
+    {
+        $submissions = $this->filterSubmissionsByDeadline(
+            $requirement->submissions,
+            $deadlineKey,
+            $assignment->id
+        );
+
+        if ($submissions->where('approval_status', 'PENDING')->count() > 0) {
+            return 'for_approval';
+        }
+
+        $status = $assignment->compliance_status;
+        if ($status === 'OVERDUE') {
+            return 'overdue';
+        }
+        if ($status === 'APPROVED') {
+            return 'complied';
+        }
+        if ($status === 'SUBMITTED') {
+            return 'for_approval';
+        }
+
+        return 'pending';
+    }
+
+    private function filterSubmissionsByDeadline($submissions, string $deadlineKey, int $assignmentId = null)
+    {
+        return $submissions->filter(function ($submission) use ($deadlineKey, $assignmentId) {
+            if ($assignmentId && $submission->assignment_id !== $assignmentId) {
+                return false;
+            }
+            if (!$submission->deadline_at_upload) {
+                return false;
+            }
+            try {
+                $dateKey = Carbon::parse($submission->deadline_at_upload)->toDateString();
+            } catch (\Exception $e) {
+                return false;
+            }
+            return $dateKey === $deadlineKey;
+        });
     }
 
     private function isPicUser($user): bool

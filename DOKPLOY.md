@@ -60,6 +60,7 @@ Create a second Dokploy service using the same source and env:
 - Dockerfile: `Dockerfile`
 - Start Command: `php artisan schedule:work`
 - No public HTTP port needed
+- Set the same environment variables as the backend service (especially `APP_URL`, `APP_TIMEZONE`, and all `MAIL_*` values).
 
 If this service is missing, reminder emails will not run even when SMTP is correct.
 
@@ -81,6 +82,12 @@ php artisan migrate --force
 php artisan notifications:test-email your-email@example.com
 php artisan schedule:list
 ```
+
+You should see `compliance:send-reminders` in the schedule list. If it does not appear, confirm:
+
+- `backend/routes/console.php` exists in the deploy artifact.
+- The scheduler service is running the correct command.
+- `APP_ENV=production` and `APP_TIMEZONE=Asia/Manila` are set.
 
 Check logs if reminder jobs do not run:
 

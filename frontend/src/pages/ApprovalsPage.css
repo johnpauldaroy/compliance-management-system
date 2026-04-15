@@ -23,8 +23,43 @@
   color: #8c8c8c;
 }
 
+.approvals-status {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.approvals-status-date {
+  font-size: 12px;
+  color: #6b7a90;
+}
+
 .approvals-action--approve {
   color: #52c41a;
+}
+
+.view-files-btn {
+  background: #e7f5ff;
+  color: #1c7ed6 !important;
+  border: 1px solid #d0ebff;
+}
+
+.view-files-btn:hover,
+.view-files-btn:focus {
+  background: #d0ebff;
+  color: #1b6ec2 !important;
+}
+
+.view-file-btn {
+  background: #f1f3f5;
+  color: #1c7ed6 !important;
+  border: 1px solid #e9ecef;
+}
+
+.view-file-btn:hover,
+.view-file-btn:focus {
+  background: #e9ecef;
+  color: #1b6ec2 !important;
 }
 
 .approvals-modal-footer {
@@ -66,4 +101,50 @@
 .approvals-upload-remarks {
   font-size: 12px;
   color: #8c8c8c;
+}
+
+.approvals-submission-card {
+  border: 1px solid #e6f4ff;
+  background: linear-gradient(135deg, #f8fbff 0%, #f1f7ff 100%);
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.approvals-submission-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.approvals-submission-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.approvals-submission-item--full {
+  grid-column: 1 / -1;
+}
+
+.approvals-submission-label {
+  font-size: 11px;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  color: #6b7a90;
+}
+
+.approvals-submission-value {
+  font-weight: 500;
+  color: #1f2a44;
+}
+
+.approvals-submission-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
 }

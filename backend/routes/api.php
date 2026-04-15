@@ -5,7 +5,7 @@ use App\Http\Controllers\AgencyController;
 use App\Http\Controllers\BranchUnitDepartmentController;
 use App\Http\Controllers\RequirementController;
 use App\Http\Controllers\RequirementImportController;
-use App\Http\Controllers\UploadController;
+use App\Http\Controllers\UploadSubmissionController;
 use App\Http\Controllers\AuditLogController;
 use App\Http\Controllers\PositionController;
 use App\Http\Controllers\ProfileController;
@@ -37,11 +37,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/requirements/export', [RequirementController::class, 'export']);
     Route::apiResource('requirements', RequirementController::class);
     Route::post('/requirements/import', [RequirementImportController::class, 'import']);
-    Route::apiResource('uploads', UploadController::class);
-    Route::get('/uploads/{upload}/download', [UploadController::class, 'download']);
-    Route::get('/uploads/{upload}/signed-url', [UploadController::class, 'signedUrl']);
-    Route::post('/uploads/{upload}/approve', [UploadController::class, 'approve']);
-    Route::post('/uploads/{upload}/reject', [UploadController::class, 'reject']);
+    Route::apiResource('submissions', UploadSubmissionController::class)->only(['index', 'store']);
+    Route::get('/submissions/{submission}/files/{upload}/download', [UploadSubmissionController::class, 'fileDownload']);
+    Route::get('/submissions/{submission}/files/{upload}/signed-url', [UploadSubmissionController::class, 'fileSignedUrl']);
+    Route::post('/submissions/{submission}/approve', [UploadSubmissionController::class, 'approve']);
+    Route::post('/submissions/{submission}/reject', [UploadSubmissionController::class, 'reject']);
     Route::apiResource('positions', PositionController::class);
 
     Route::get('/audit-logs', [AuditLogController::class, 'index']);

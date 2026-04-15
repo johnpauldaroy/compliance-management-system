@@ -1,5 +1,5 @@
 import api, { API_ROOT_URL } from '../lib/api';
-import type { Agency, BranchUnitDepartment, PaginatedResponse, Position, Requirement, Upload, User } from '../types';
+import type { Agency, BranchUnitDepartment, PaginatedResponse, Position, Requirement, UploadSubmission, User } from '../types';
 
 const getCookie = (name: string) => {
     const value = `; ${document.cookie}`;
@@ -129,28 +129,28 @@ export const uploadService = {
     upload: async (data: FormData) => {
         const rootUrl = getRootUrl();
         await api.get('/sanctum/csrf-cookie', { baseURL: rootUrl });
-        return (await api.post<Upload>('/uploads', data, {
+        return (await api.post<UploadSubmission>('/submissions', data, {
             headers: {
                 ...getCsrfHeaders(),
                 'Content-Type': 'multipart/form-data',
             },
         })).data;
     },
-    getAll: async () => (await api.get<Upload[]>('/uploads')).data,
+    getAll: async () => (await api.get<UploadSubmission[]>('/submissions')).data,
     approve: async (id: number, remarks: string) => {
         const rootUrl = getRootUrl();
         await api.get('/sanctum/csrf-cookie', { baseURL: rootUrl });
-        return (await api.post<Upload>(`/uploads/${id}/approve`, { remarks }, { headers: getCsrfHeaders() })).data;
+        return (await api.post<UploadSubmission>(`/submissions/${id}/approve`, { remarks }, { headers: getCsrfHeaders() })).data;
     },
     reject: async (id: number, remarks: string) => {
         const rootUrl = getRootUrl();
         await api.get('/sanctum/csrf-cookie', { baseURL: rootUrl });
-        return (await api.post<Upload>(`/uploads/${id}/reject`, { remarks }, { headers: getCsrfHeaders() })).data;
+        return (await api.post<UploadSubmission>(`/submissions/${id}/reject`, { remarks }, { headers: getCsrfHeaders() })).data;
     },
-    download: async (id: number, inline = false) =>
-        (await api.get(`/uploads/${id}/download`, { params: { inline }, responseType: 'blob' })).data,
-    getSignedUrl: async (id: number, inline = false) =>
-        (await api.get<{ url: string }>(`/uploads/${id}/signed-url`, { params: { inline } })).data,
+    download: async (submissionId: number, uploadId: number, inline = false) =>
+        (await api.get(`/submissions/${submissionId}/files/${uploadId}/download`, { params: { inline }, responseType: 'blob' })).data,
+    getSignedUrl: async (submissionId: number, uploadId: number, inline = false) =>
+        (await api.get<{ url: string }>(`/submissions/${submissionId}/files/${uploadId}/signed-url`, { params: { inline } })).data,
 };
 
 export const dashboardService = {
