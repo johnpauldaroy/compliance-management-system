@@ -73,6 +73,16 @@ const isInlineViewableFile = (file?: { original_file_name?: string | null; doc_f
     const name = (file?.original_file_name || file?.doc_file || '').toLowerCase();
     return name.endsWith('.pdf');
 };
+const triggerFileDownload = (blob: Blob, fileName: string) => {
+    const blobUrl = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = blobUrl;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(blobUrl);
+};
 
 const toIdList = (value?: string | null) =>
     value
@@ -254,17 +264,14 @@ const RequirementsPage = () => {
     const handleViewUpload = async (submissionId: number, uploadId: number, file?: UploadFileRecord | null) => {
         try {
             const inline = isInlineViewableFile(file);
-            const { url } = await uploadService.getSignedUrl(submissionId, uploadId, inline);
             if (inline) {
+                const { url } = await uploadService.getSignedUrl(submissionId, uploadId, true);
                 window.open(url, '_blank', 'noopener,noreferrer');
                 return;
             }
 
-            const link = document.createElement('a');
-            link.href = url;
-            document.body.appendChild(link);
-            link.click();
-            link.remove();
+            const blob = await uploadService.download(submissionId, uploadId, false);
+            triggerFileDownload(blob, getFileName(file));
         } catch (error: any) {
             message.error(error.response?.data?.message || 'Failed to open file.');
         }
