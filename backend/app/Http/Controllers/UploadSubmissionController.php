@@ -133,7 +133,8 @@ class UploadSubmissionController extends Controller
             return response()->json(['message' => 'File not found.'], 404);
         }
 
-        $inline = filter_var($request->query('inline', false), FILTER_VALIDATE_BOOLEAN);
+        $inline = filter_var($request->query('inline', false), FILTER_VALIDATE_BOOLEAN)
+            && $this->supportsInlineView($upload);
         $fileName = basename($path);
         $disk = $this->resolveUploadDisk($path);
 
@@ -171,6 +172,14 @@ class UploadSubmissionController extends Controller
         }
 
         return response()->download($fullPath, $fileName);
+    }
+
+    private function supportsInlineView(Upload $upload): bool
+    {
+        $fileName = $upload->original_file_name ?: $upload->doc_file;
+        $extension = strtolower((string) pathinfo((string) $fileName, PATHINFO_EXTENSION));
+
+        return $extension === 'pdf';
     }
 
     private function resolveUploadDisk(string $path): ?string

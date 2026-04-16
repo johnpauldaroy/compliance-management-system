@@ -23,6 +23,11 @@ import './Dashboard.css';
 
 const { Text } = AntTypography;
 
+const isInlineViewableFile = (file?: { original_file_name?: string | null; doc_file?: string | null }) => {
+    const name = (file?.original_file_name || file?.doc_file || '').toLowerCase();
+    return name.endsWith('.pdf');
+};
+
 const Dashboard = () => {
     const navigate = useNavigate();
     const queryClient = useQueryClient();
@@ -406,10 +411,20 @@ const Dashboard = () => {
         setDetailOpen(true);
     };
 
-    const handleViewFile = async (submissionId: number, uploadId: number) => {
+    const handleViewFile = async (submissionId: number, uploadId: number, file?: any) => {
         try {
-            const { url } = await uploadService.getSignedUrl(submissionId, uploadId, true);
-            window.open(url, '_blank', 'noopener,noreferrer');
+            const inline = isInlineViewableFile(file);
+            const { url } = await uploadService.getSignedUrl(submissionId, uploadId, inline);
+            if (inline) {
+                window.open(url, '_blank', 'noopener,noreferrer');
+                return;
+            }
+
+            const link = document.createElement('a');
+            link.href = url;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
         } catch {
             // noop: use a simple fallback to avoid noisy dashboard errors
         }
@@ -917,8 +932,9 @@ const Dashboard = () => {
                                         type="primary"
                                         onClick={() => {
                                             const fileId = latestSubmission.files?.[0]?.id;
+                                            const file = latestSubmission.files?.[0];
                                             if (fileId) {
-                                                handleViewFile(latestSubmission.id, fileId);
+                                                handleViewFile(latestSubmission.id, fileId, file);
                                             }
                                         }}
                                     >

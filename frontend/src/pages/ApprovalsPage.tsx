@@ -9,6 +9,11 @@ import './ApprovalsPage.css';
 
 const { Title } = Typography;
 
+const isInlineViewableFile = (file?: { original_file_name?: string | null; doc_file?: string | null }) => {
+    const name = (file?.original_file_name || file?.doc_file || '').toLowerCase();
+    return name.endsWith('.pdf');
+};
+
 const ApprovalsPage = () => {
     const queryClient = useQueryClient();
     const [form] = Form.useForm<{ remarks?: string }>();
@@ -70,10 +75,20 @@ const ApprovalsPage = () => {
         return String(submission.approval_status || '').toUpperCase() === statusFilter.toUpperCase();
     });
 
-    const handleViewFile = async (submissionId: number, uploadId: number) => {
+    const handleViewFile = async (submissionId: number, uploadId: number, file?: any) => {
         try {
-            const { url } = await uploadService.getSignedUrl(submissionId, uploadId, true);
-            window.open(url, '_blank', 'noopener,noreferrer');
+            const inline = isInlineViewableFile(file);
+            const { url } = await uploadService.getSignedUrl(submissionId, uploadId, inline);
+            if (inline) {
+                window.open(url, '_blank', 'noopener,noreferrer');
+                return;
+            }
+
+            const link = document.createElement('a');
+            link.href = url;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
         } catch (error: any) {
             message.error(error.response?.data?.message || 'Failed to open file.');
         }
@@ -491,7 +506,7 @@ const ApprovalsPage = () => {
                                     icon={<EyeOutlined />}
                                     onClick={() => {
                                         if (activeSubmissionId) {
-                                            handleViewFile(activeSubmissionId, file.id);
+                                            handleViewFile(activeSubmissionId, file.id, file);
                                         }
                                     }}
                                 >

@@ -66,6 +66,10 @@ const toDeadlineDayjs = (value?: string | null) => {
 const allowedUploadExtensions = ['.pdf', '.csv', '.xls', '.xlsx'];
 const maxUploadSizeBytes = 250 * 1024 * 1024;
 const uploadAccept = '.pdf,.csv,.xls,.xlsx,application/pdf,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+const isInlineViewableFile = (file?: { original_file_name?: string | null; doc_file?: string | null } | null) => {
+    const name = (file?.original_file_name || file?.doc_file || '').toLowerCase();
+    return name.endsWith('.pdf');
+};
 
 type MeResponse = { user: User };
 
@@ -132,10 +136,20 @@ const MyRequirementsPage = () => {
         return 'warning';
     };
 
-    const handleViewUpload = async (submissionId: number, uploadId: number) => {
+    const handleViewUpload = async (submissionId: number, uploadId: number, file?: UploadFileRecord | null) => {
         try {
-            const { url } = await uploadService.getSignedUrl(submissionId, uploadId, true);
-            window.open(url, '_blank', 'noopener,noreferrer');
+            const inline = isInlineViewableFile(file);
+            const { url } = await uploadService.getSignedUrl(submissionId, uploadId, inline);
+            if (inline) {
+                window.open(url, '_blank', 'noopener,noreferrer');
+                return;
+            }
+
+            const link = document.createElement('a');
+            link.href = url;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
         } catch (error: any) {
             message.error(error.response?.data?.message || 'Failed to open file.');
         }
@@ -730,7 +744,7 @@ const MyRequirementsPage = () => {
                                     icon={<EyeOutlined />}
                                     onClick={() => {
                                         if (activeSubmissionId) {
-                                            handleViewUpload(activeSubmissionId, file.id);
+                                            handleViewUpload(activeSubmissionId, file.id, file);
                                         }
                                     }}
                                 >
