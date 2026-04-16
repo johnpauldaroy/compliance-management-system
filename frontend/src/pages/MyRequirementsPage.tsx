@@ -63,6 +63,10 @@ const toDeadlineDayjs = (value?: string | null) => {
     return fallback.isValid() ? fallback : null;
 };
 
+const allowedUploadExtensions = ['.pdf', '.csv', '.xls', '.xlsx'];
+const maxUploadSizeBytes = 250 * 1024 * 1024;
+const uploadAccept = '.pdf,.csv,.xls,.xlsx,application/pdf,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
 type MeResponse = { user: User };
 
 const MyRequirementsPage = () => {
@@ -172,6 +176,17 @@ const MyRequirementsPage = () => {
 
     const getActiveSequentialAssignment = (assignments: RequirementAssignment[]) =>
         assignments.find((assignment) => assignment.compliance_status !== 'APPROVED');
+
+    const resolveAssignmentDeadlineValue = (
+        assignments: RequirementAssignment[],
+        assignmentId?: number | null,
+        fallbackDeadline?: string | null
+    ) => {
+        const assignmentDeadline = assignmentId
+            ? assignments.find((assignment) => assignment.id === assignmentId)?.deadline
+            : undefined;
+        return toDeadlineDayjs(assignmentDeadline || fallbackDeadline);
+    };
 
     return (
         <div className="myreq-page">
@@ -345,15 +360,19 @@ const MyRequirementsPage = () => {
                                                             setUploadRequirementId(data.id);
                                                             setUploadFiles([]);
                                                             form.resetFields();
-                                                            const deadlineValue = toDeadlineDayjs(data.deadline);
-                                                            if (isAdmin && deadlineValue) {
-                                                                form.setFieldsValue({ deadline_at_upload: deadlineValue });
-                                                            }
                                                             const assignments = detailData?.assignments || data.assignments || [];
                                                             const isSequential = (detailData?.assignment_mode || data.assignment_mode) === 'sequential';
                                                             const orderedAssignments = getOrderedAssignments(assignments as RequirementAssignment[], isSequential);
                                                             const activeSequential = isSequential ? getActiveSequentialAssignment(orderedAssignments) : null;
                                                             const autoAssignmentId = activeSequential?.id || (orderedAssignments.length === 1 ? orderedAssignments[0].id : null);
+                                                            const deadlineValue = resolveAssignmentDeadlineValue(
+                                                                orderedAssignments,
+                                                                autoAssignmentId,
+                                                                data.deadline
+                                                            );
+                                                            if (isAdmin && deadlineValue) {
+                                                                form.setFieldsValue({ deadline_at_upload: deadlineValue });
+                                                            }
                                                             if (autoAssignmentId) {
                                                                 form.setFieldsValue({ assignment_id: autoAssignmentId });
                                                             }
@@ -373,15 +392,19 @@ const MyRequirementsPage = () => {
                                                         setUploadRequirementId(data.id);
                                                         setUploadFiles([]);
                                                         form.resetFields();
-                                                        const deadlineValue = toDeadlineDayjs(data.deadline);
-                                                        if (isAdmin && deadlineValue) {
-                                                            form.setFieldsValue({ deadline_at_upload: deadlineValue });
-                                                        }
                                                         const assignments = detailData?.assignments || data.assignments || [];
                                                         const isSequential = (detailData?.assignment_mode || data.assignment_mode) === 'sequential';
                                                         const orderedAssignments = getOrderedAssignments(assignments as RequirementAssignment[], isSequential);
                                                         const activeSequential = isSequential ? getActiveSequentialAssignment(orderedAssignments) : null;
                                                         const autoAssignmentId = activeSequential?.id || (orderedAssignments.length === 1 ? orderedAssignments[0].id : null);
+                                                        const deadlineValue = resolveAssignmentDeadlineValue(
+                                                            orderedAssignments,
+                                                            autoAssignmentId,
+                                                            data.deadline
+                                                        );
+                                                        if (isAdmin && deadlineValue) {
+                                                            form.setFieldsValue({ deadline_at_upload: deadlineValue });
+                                                        }
                                                         if (autoAssignmentId) {
                                                             form.setFieldsValue({ assignment_id: autoAssignmentId });
                                                         }
@@ -600,17 +623,18 @@ const MyRequirementsPage = () => {
                 >
                     <Form.Item label="Document File" required>
                         <Upload
-                            accept="application/pdf,.pdf"
+                            accept={uploadAccept}
                             multiple
                             fileList={uploadFiles}
                             beforeUpload={(file) => {
-                                if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
-                                    message.error('Only PDF files are allowed.');
+                                const lowerName = file.name.toLowerCase();
+                                const isAllowed = allowedUploadExtensions.some((extension) => lowerName.endsWith(extension));
+                                if (!isAllowed) {
+                                    message.error('Only PDF, CSV, XLS, and XLSX files are allowed.');
                                     return Upload.LIST_IGNORE;
                                 }
-                                const maxSizeBytes = 150 * 1024 * 1024;
-                                if (file.size > maxSizeBytes) {
-                                    message.error('Each file must be 150MB or less.');
+                                if (file.size > maxUploadSizeBytes) {
+                                    message.error('Each file must be 250MB or less.');
                                     return Upload.LIST_IGNORE;
                                 }
                                 return false;
@@ -650,6 +674,16 @@ const MyRequirementsPage = () => {
                                     }))}
                                     placeholder={isSequential ? 'Active PIC only' : 'Select a PIC'}
                                     disabled={selectable.length === 1}
+                                    onChange={(value) => {
+                                        const deadlineValue = resolveAssignmentDeadlineValue(
+                                            selectable as RequirementAssignment[],
+                                            value,
+                                            detailData?.deadline || selectedRequirement?.deadline
+                                        );
+                                        form.setFieldsValue({
+                                            deadline_at_upload: deadlineValue || undefined,
+                                        });
+                                    }}
                                 />
                             </Form.Item>
                         );

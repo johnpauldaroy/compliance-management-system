@@ -38,9 +38,9 @@ class UploadSubmissionController extends Controller
 
         if (is_array($filesInput)) {
             $rules['doc_file'] = 'required|array|min:1';
-            $rules['doc_file.*'] = 'file|mimes:pdf|max:153600';
+            $rules['doc_file.*'] = 'file|mimes:pdf,csv,xls,xlsx|max:256000';
         } else {
-            $rules['doc_file'] = 'required|file|mimes:pdf|max:153600';
+            $rules['doc_file'] = 'required|file|mimes:pdf,csv,xls,xlsx|max:256000';
         }
 
         $request->validate($rules);

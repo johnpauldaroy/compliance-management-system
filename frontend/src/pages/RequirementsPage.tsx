@@ -66,6 +66,10 @@ const toDeadlineDayjs = (value?: string | null) => {
     return fallback.isValid() ? fallback : null;
 };
 
+const allowedUploadExtensions = ['.pdf', '.csv', '.xls', '.xlsx'];
+const maxUploadSizeBytes = 250 * 1024 * 1024;
+const uploadAccept = '.pdf,.csv,.xls,.xlsx,application/pdf,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
 const toIdList = (value?: string | null) =>
     value
         ? value.split(';').map((item) => Number(item.trim())).filter(Boolean)
@@ -287,6 +291,17 @@ const RequirementsPage = () => {
 
     const getActiveSequentialAssignment = (assignments: RequirementAssignment[]) =>
         assignments.find((assignment) => assignment.compliance_status !== 'APPROVED');
+
+    const resolveAssignmentDeadlineValue = (
+        assignments: RequirementAssignment[],
+        assignmentId?: number | null,
+        fallbackDeadline?: string | null
+    ) => {
+        const assignmentDeadline = assignmentId
+            ? assignments.find((assignment) => assignment.id === assignmentId)?.deadline
+            : undefined;
+        return toDeadlineDayjs(assignmentDeadline || fallbackDeadline);
+    };
 
     const createRequirement = useMutation({
         mutationFn: (payload: RequirementPayload) => requirementService.create(payload),
@@ -888,10 +903,14 @@ const RequirementsPage = () => {
                     <Form.Item shouldUpdate>
                         {() => {
                             const frequency = form.getFieldValue('frequency');
+                            const assignmentMode = form.getFieldValue('assignment_mode') || 'parallel';
                             const isMonthly = isMonthlyFrequency(frequency);
                             if (!isMonthly) {
                                 return null;
                             }
+                            const helperText = assignmentMode === 'parallel'
+                                ? 'Each approved PIC auto-advances independently.'
+                                : 'All PICs must be approved before the deadline advances.';
                             return (
                                 <Form.Item
                                     label="Auto-advance monthly deadline"
@@ -901,7 +920,7 @@ const RequirementsPage = () => {
                                 >
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                                         <Switch />
-                                        <Typography.Text type="secondary">All PICs must be approved.</Typography.Text>
+                                        <Typography.Text type="secondary">{helperText}</Typography.Text>
                                     </div>
                                 </Form.Item>
                             );
@@ -985,6 +1004,9 @@ const RequirementsPage = () => {
                                                         }>
                                                             {asgn.compliance_status}
                                                         </Tag>
+                                                        <Text type="secondary">
+                                                            Deadline: {formatPhDate(asgn.deadline)}
+                                                        </Text>
                                                         {asgn.last_submitted_at && (
                                                             <Text type="secondary">
                                                                 Submitted: {new Date(asgn.last_submitted_at).toLocaleDateString()}
@@ -1005,8 +1027,15 @@ const RequirementsPage = () => {
                             <Descriptions.Item label="Schedule">
                                 {detailData?.schedule || 'N/A'}
                             </Descriptions.Item>
-                            <Descriptions.Item label="Deadline">
-                                {formatPhDate(detailData?.deadline)}
+                            <Descriptions.Item label={detailData?.assignment_mode === 'parallel' ? 'Base Deadline' : 'Deadline'}>
+                                <Space direction="vertical" size={0}>
+                                    <span>{formatPhDate(detailData?.deadline)}</span>
+                                    {detailData?.assignment_mode === 'parallel' ? (
+                                        <Typography.Text type="secondary">
+                                            Live deadlines follow each PIC assignment.
+                                        </Typography.Text>
+                                    ) : null}
+                                </Space>
                             </Descriptions.Item>
                             <Descriptions.Item label="Auto-advance Monthly Deadline">
                                 {isMonthlyFrequency(detailData?.frequency)
@@ -1036,15 +1065,19 @@ const RequirementsPage = () => {
                                         }
                                         setUploadFiles([]);
                                         uploadForm.resetFields();
-                                        const deadlineValue = toDeadlineDayjs(detailData?.deadline);
-                                        if (deadlineValue) {
-                                            uploadForm.setFieldsValue({ deadline_at_upload: deadlineValue });
-                                        }
                                         const assignments = detailData?.assignments || [];
                                         const isSequential = detailData?.assignment_mode === 'sequential';
                                         const orderedAssignments = getOrderedAssignments(assignments, isSequential);
                                         const activeSequential = isSequential ? getActiveSequentialAssignment(orderedAssignments) : null;
                                         const autoAssignmentId = activeSequential?.id || (orderedAssignments.length === 1 ? orderedAssignments[0].id : null);
+                                        const deadlineValue = resolveAssignmentDeadlineValue(
+                                            orderedAssignments,
+                                            autoAssignmentId,
+                                            detailData?.deadline
+                                        );
+                                        if (deadlineValue) {
+                                            uploadForm.setFieldsValue({ deadline_at_upload: deadlineValue });
+                                        }
                                         if (autoAssignmentId) {
                                             uploadForm.setFieldsValue({ assignment_id: autoAssignmentId });
                                         }
@@ -1240,17 +1273,18 @@ const RequirementsPage = () => {
                 >
                     <Form.Item label="Document File" required>
                         <Upload
-                            accept="application/pdf,.pdf"
+                            accept={uploadAccept}
                             multiple
                             fileList={uploadFiles}
                             beforeUpload={(file) => {
-                                if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
-                                    message.error('Only PDF files are allowed.');
+                                const lowerName = file.name.toLowerCase();
+                                const isAllowed = allowedUploadExtensions.some((extension) => lowerName.endsWith(extension));
+                                if (!isAllowed) {
+                                    message.error('Only PDF, CSV, XLS, and XLSX files are allowed.');
                                     return Upload.LIST_IGNORE;
                                 }
-                                const maxSizeBytes = 150 * 1024 * 1024;
-                                if (file.size > maxSizeBytes) {
-                                    message.error('Each file must be 150MB or less.');
+                                if (file.size > maxUploadSizeBytes) {
+                                    message.error('Each file must be 250MB or less.');
                                     return Upload.LIST_IGNORE;
                                 }
                                 return false;
@@ -1290,6 +1324,16 @@ const RequirementsPage = () => {
                                     }))}
                                     placeholder={isSequential ? 'Active PIC only' : 'Select a PIC'}
                                     disabled={selectable.length === 1}
+                                    onChange={(value) => {
+                                        const deadlineValue = resolveAssignmentDeadlineValue(
+                                            selectable as RequirementAssignment[],
+                                            value,
+                                            detailData?.deadline
+                                        );
+                                        uploadForm.setFieldsValue({
+                                            deadline_at_upload: deadlineValue || undefined,
+                                        });
+                                    }}
                                 />
                             </Form.Item>
                         );
