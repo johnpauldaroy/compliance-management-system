@@ -33,6 +33,9 @@ RUN if [ ! -f composer.json ] && [ -f backend/composer.json ]; then \
       cp -a backend/. /var/www/; \
     fi
 
+# Allow larger compliance uploads.
+COPY php/uploads.ini /usr/local/etc/php/conf.d/uploads.ini
+
 # Install dependencies
 RUN composer install --no-dev --optimize-autoloader --no-interaction --prefer-dist --no-progress
 
