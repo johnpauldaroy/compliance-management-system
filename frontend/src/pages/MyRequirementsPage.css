@@ -126,3 +126,75 @@
   gap: 12px;
   flex-wrap: wrap;
 }
+
+.myreq-assignments-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.myreq-assignment-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.myreq-assignment-item {
+  padding: 12px 0;
+}
+
+.myreq-assignment-item + .myreq-assignment-item {
+  border-top: 1px solid #e9eef5;
+}
+
+.myreq-assignment-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.myreq-assignment-name {
+  color: #1f2a44;
+  font-size: 15px;
+  line-height: 1.4;
+  font-weight: 600;
+  word-break: normal;
+  overflow-wrap: anywhere;
+}
+
+.myreq-assignment-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  color: #5f7086;
+}
+
+.myreq-assignment-meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.myreq-assignment-meta-label {
+  font-size: 12px;
+  color: #6f8196;
+}
+
+.myreq-assignment-meta-value {
+  font-size: 13px;
+  color: #1f2a44;
+  font-weight: 500;
+}
+
+@media (max-width: 560px) {
+  .myreq-assignment-meta {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+}

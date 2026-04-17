@@ -130,7 +130,12 @@ class DashboardController extends Controller
         $isPic = $user && $this->isPicUser($user);
 
         $requirementsQuery = Requirement::with(['assignments.user', 'submissions'])
-            ->whereNotNull('deadline');
+            ->where(function ($query) {
+                $query->whereNotNull('deadline')
+                    ->orWhereHas('assignments', function ($assignmentQuery) {
+                        $assignmentQuery->whereNotNull('deadline');
+                    });
+            });
 
         if ($isPic && $userId) {
             $requirementsQuery->where(function ($query) use ($userId) {
@@ -145,38 +150,65 @@ class DashboardController extends Controller
         $byDate = [];
 
         foreach ($requirements as $requirement) {
+            if ($requirement->assignment_mode === 'parallel') {
+                $assignments = $requirement->assignments
+                    ->filter(function ($assignment) use ($isPic, $userId) {
+                        if (!$assignment->deadline) {
+                            return false;
+                        }
+
+                        if ($isPic && $userId) {
+                            return (int) $assignment->assigned_to_user_id === (int) $userId;
+                        }
+
+                        return true;
+                    })
+                    ->values();
+
+                $groupedAssignments = $assignments->groupBy(function ($assignment) {
+                    return Carbon::parse($assignment->deadline)->toDateString();
+                });
+
+                foreach ($groupedAssignments as $dateKey => $assignmentsForDate) {
+                    $picDetails = $assignmentsForDate
+                        ->map(function ($assignment) use ($requirement, $dateKey) {
+                            return $this->buildCalendarPicDetail($requirement, $assignment, $dateKey);
+                        })
+                        ->values();
+
+                    $status = $isPic && $userId
+                        ? $this->summarizeAssignmentStatusForDeadline($requirement, $assignmentsForDate->first(), $dateKey)
+                        : $this->summarizeCalendarStatusForAssignments($requirement, $assignmentsForDate, $dateKey);
+
+                    $byDate[$dateKey][] = [
+                        'id' => $requirement->id,
+                        'req_id' => $requirement->req_id,
+                        'name' => $requirement->requirement,
+                        'status' => $status,
+                        'pic' => $assignmentsForDate
+                            ->pluck('user.employee_name')
+                            ->filter()
+                            ->unique()
+                            ->values()
+                            ->join(', '),
+                        'pic_details' => $picDetails,
+                    ];
+                }
+
+                continue;
+            }
+
             if (!$requirement->deadline) {
                 continue;
             }
+
             $dateKey = Carbon::parse($requirement->deadline)->toDateString();
             $status = $isPic && $userId
                 ? $this->summarizeCalendarStatusForUser($requirement, $userId)
                 : $this->summarizeCalendarStatus($requirement);
             $picDetails = $requirement->assignments
                 ->map(function ($assignment) use ($requirement, $dateKey) {
-                    $user = $assignment->user;
-                    $latestSubmission = $this->filterSubmissionsByDeadline(
-                        $requirement->submissions,
-                        $dateKey,
-                        $assignment->id
-                    )
-                        ->sortByDesc(function ($submission) {
-                            $timestamp = $submission->upload_date ?? $submission->created_at;
-                            return $timestamp ? Carbon::parse($timestamp)->timestamp : 0;
-                        })
-                        ->first();
-                    $submittedAt = $latestSubmission?->upload_date ?? $latestSubmission?->created_at ?? null;
-                    $approvedAt = $latestSubmission?->approval_status === 'APPROVED'
-                        ? ($latestSubmission?->status_change_on ?? $submittedAt)
-                        : null;
-                    return [
-                        'id' => $assignment->id,
-                        'user_id' => $assignment->assigned_to_user_id,
-                        'name' => $user?->employee_name ?: $user?->email ?: 'Unknown',
-                        'status' => $this->summarizeAssignmentStatusForDeadline($requirement, $assignment, $dateKey),
-                        'submitted_at' => $submittedAt,
-                        'approved_at' => $approvedAt,
-                    ];
+                    return $this->buildCalendarPicDetail($requirement, $assignment, $dateKey);
                 })
                 ->values();
             $byDate[$dateKey][] = [
@@ -195,6 +227,34 @@ class DashboardController extends Controller
         }
 
         return response()->json($byDate);
+    }
+
+    private function buildCalendarPicDetail($requirement, $assignment, string $deadlineKey): array
+    {
+        $user = $assignment->user;
+        $latestSubmission = $this->filterSubmissionsByDeadline(
+            $requirement->submissions,
+            $deadlineKey,
+            $assignment->id
+        )
+            ->sortByDesc(function ($submission) {
+                $timestamp = $submission->upload_date ?? $submission->created_at;
+                return $timestamp ? Carbon::parse($timestamp)->timestamp : 0;
+            })
+            ->first();
+        $submittedAt = $latestSubmission?->upload_date ?? $latestSubmission?->created_at ?? null;
+        $approvedAt = $latestSubmission?->approval_status === 'APPROVED'
+            ? ($latestSubmission?->status_change_on ?? $submittedAt)
+            : null;
+
+        return [
+            'id' => $assignment->id,
+            'user_id' => $assignment->assigned_to_user_id,
+            'name' => $user?->employee_name ?: $user?->email ?: 'Unknown',
+            'status' => $this->summarizeAssignmentStatusForDeadline($requirement, $assignment, $deadlineKey),
+            'submitted_at' => $submittedAt,
+            'approved_at' => $approvedAt,
+        ];
     }
 
     private function summarizeRequirementStatus($requirement): string
@@ -236,6 +296,35 @@ class DashboardController extends Controller
         $assignments = $requirement->assignments;
         if ($assignments->isEmpty()) {
             return 'pending';
+        }
+
+        if ($assignments->where('compliance_status', 'OVERDUE')->count() > 0) {
+            return 'overdue';
+        }
+
+        $allApproved = $assignments->where('compliance_status', 'APPROVED')->count() === $assignments->count();
+        if ($allApproved) {
+            return 'complied';
+        }
+
+        return 'pending';
+    }
+
+    private function summarizeCalendarStatusForAssignments($requirement, $assignments, string $deadlineKey): string
+    {
+        if ($assignments->isEmpty()) {
+            return 'pending';
+        }
+
+        $assignmentIds = $assignments->pluck('id')->filter()->all();
+        $submissions = $requirement->submissions->filter(function ($submission) use ($assignmentIds, $deadlineKey) {
+            return in_array($submission->assignment_id, $assignmentIds, true)
+                && $submission->deadline_at_upload
+                && Carbon::parse($submission->deadline_at_upload)->toDateString() === $deadlineKey;
+        });
+
+        if ($submissions->where('approval_status', 'PENDING')->count() > 0) {
+            return 'for_approval';
         }
 
         if ($assignments->where('compliance_status', 'OVERDUE')->count() > 0) {

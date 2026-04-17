@@ -4,6 +4,14 @@
   gap: 16px;
 }
 
+.approvals-detail-drawer .ant-descriptions-item-label,
+.approvals-detail-drawer .ant-descriptions-item-content {
+  word-break: normal;
+  overflow-wrap: break-word;
+  white-space: normal;
+  hyphens: none;
+}
+
 .approvals-title {
   margin: 0;
 }
@@ -147,4 +155,76 @@
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
+}
+
+.approvals-assignments-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.approvals-assignment-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.approvals-assignment-item {
+  padding: 12px 0;
+}
+
+.approvals-assignment-item + .approvals-assignment-item {
+  border-top: 1px solid #e9eef5;
+}
+
+.approvals-assignment-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.approvals-assignment-name {
+  color: #1f2a44;
+  font-size: 15px;
+  line-height: 1.4;
+  font-weight: 600;
+  word-break: normal;
+  overflow-wrap: anywhere;
+}
+
+.approvals-assignment-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  color: #5f7086;
+}
+
+.approvals-assignment-meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.approvals-assignment-meta-label {
+  font-size: 12px;
+  color: #6f8196;
+}
+
+.approvals-assignment-meta-value {
+  font-size: 13px;
+  color: #1f2a44;
+  font-weight: 500;
+}
+
+@media (max-width: 560px) {
+  .approvals-assignment-meta {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
 }

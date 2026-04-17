@@ -24,6 +24,21 @@ const triggerFileDownload = (blob: Blob, fileName: string) => {
     window.URL.revokeObjectURL(blobUrl);
 };
 
+const getOrderedAssignments = (assignments: any[], isSequential: boolean) => {
+    if (!isSequential) {
+        return assignments;
+    }
+
+    return [...assignments].sort((a, b) => {
+        const aOrder = a.sequence_order ?? Number.MAX_SAFE_INTEGER;
+        const bOrder = b.sequence_order ?? Number.MAX_SAFE_INTEGER;
+        if (aOrder !== bOrder) {
+            return aOrder - bOrder;
+        }
+        return (a.id || 0) - (b.id || 0);
+    });
+};
+
 const ApprovalsPage = () => {
     const queryClient = useQueryClient();
     const [form] = Form.useForm<{ remarks?: string }>();
@@ -376,6 +391,59 @@ const ApprovalsPage = () => {
                             </Descriptions.Item>
                             <Descriptions.Item label="Deadline">
                                 {requirementDetail?.deadline || 'N/A'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Assignment Mode">
+                                {requirementDetail?.assignment_mode ? requirementDetail.assignment_mode.toUpperCase() : 'PARALLEL'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Person-In-Charge" span={2}>
+                                {requirementDetail?.assignments?.length ? (
+                                    <div className="approvals-assignments-list">
+                                        {(() => {
+                                            const isSequential = requirementDetail.assignment_mode === 'sequential';
+                                            const orderedAssignments = getOrderedAssignments(requirementDetail.assignments, isSequential);
+                                            const activeAssignmentId = isSequential
+                                                ? orderedAssignments.find((assignment) => assignment.compliance_status !== 'APPROVED')?.id
+                                                : null;
+
+                                            return orderedAssignments.map((assignment: any, index: number) => (
+                                                <div key={assignment.id} className="approvals-assignment-item">
+                                                    <div className="approvals-assignment-header">
+                                                        <span className="approvals-assignment-name">
+                                                            {isSequential ? `${index + 1}. ` : ''}{assignment.user?.employee_name || 'N/A'}
+                                                        </span>
+                                                        <div className="approvals-assignment-tags">
+                                                            {isSequential && activeAssignmentId === assignment.id ? (
+                                                                <Tag color="gold">ACTIVE</Tag>
+                                                            ) : null}
+                                                            <Tag color={
+                                                                assignment.compliance_status === 'APPROVED' ? 'green' :
+                                                                    assignment.compliance_status === 'REJECTED' ? 'red' :
+                                                                        assignment.compliance_status === 'SUBMITTED' ? 'blue' :
+                                                                            assignment.compliance_status === 'OVERDUE' ? 'orange' : 'default'
+                                                            }>
+                                                                {assignment.compliance_status}
+                                                            </Tag>
+                                                        </div>
+                                                    </div>
+                                                    <div className="approvals-assignment-meta">
+                                                        <span className="approvals-assignment-meta-item">
+                                                            <span className="approvals-assignment-meta-label">Deadline</span>
+                                                            <span className="approvals-assignment-meta-value">
+                                                                {assignment.deadline ? new Date(assignment.deadline).toLocaleDateString() : 'N/A'}
+                                                            </span>
+                                                        </span>
+                                                        <span className="approvals-assignment-meta-item">
+                                                            <span className="approvals-assignment-meta-label">Submitted</span>
+                                                            <span className="approvals-assignment-meta-value">
+                                                                {assignment.last_submitted_at ? new Date(assignment.last_submitted_at).toLocaleDateString() : 'N/A'}
+                                                            </span>
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            ));
+                                        })()}
+                                    </div>
+                                ) : 'N/A'}
                             </Descriptions.Item>
                             <Descriptions.Item label="Overall Compliance Status">
                                 {requirementDetail?.compliance_status || 'N/A'}

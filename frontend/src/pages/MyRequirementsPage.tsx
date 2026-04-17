@@ -209,6 +209,14 @@ const MyRequirementsPage = () => {
         return toDeadlineDayjs(assignmentDeadline || fallbackDeadline);
     };
 
+    const getUserAssignment = (assignments: RequirementAssignment[], userId?: number) => {
+        if (!userId) {
+            return null;
+        }
+
+        return assignments.find((assignment) => assignment.assigned_to_user_id === userId) || null;
+    };
+
     return (
         <div className="myreq-page">
             <Title level={2} className="myreq-title">My Compliance Requirements</Title>
@@ -299,8 +307,59 @@ const MyRequirementsPage = () => {
                                 <Descriptions.Item label="Schedule">
                                     {data.schedule || 'N/A'}
                                 </Descriptions.Item>
-                                <Descriptions.Item label="Deadline">
+                                <Descriptions.Item label={data.assignment_mode === 'sequential' ? 'Final Deadline' : 'Deadline'}>
                                     {formatPhDate(data.deadline)}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="Assignment Mode">
+                                    {data.assignment_mode ? data.assignment_mode.toUpperCase() : 'PARALLEL'}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="Person-In-Charge" span={2}>
+                                    {data.assignments && data.assignments.length > 0 ? (
+                                        <div className="myreq-assignments-list">
+                                            {(() => {
+                                                const isSequential = data.assignment_mode === 'sequential';
+                                                const orderedAssignments = getOrderedAssignments(data.assignments, isSequential);
+                                                const activeAssignmentId = isSequential
+                                                    ? orderedAssignments.find((assignment) => assignment.compliance_status !== 'APPROVED')?.id
+                                                    : null;
+
+                                                return orderedAssignments.map((assignment, index) => (
+                                                    <div key={assignment.id} className="myreq-assignment-item">
+                                                        <div className="myreq-assignment-header">
+                                                            <span className="myreq-assignment-name">
+                                                                {isSequential ? `${index + 1}. ` : ''}{assignment.user?.employee_name || 'N/A'}
+                                                            </span>
+                                                            <div className="myreq-assignment-tags">
+                                                                {isSequential && activeAssignmentId === assignment.id ? (
+                                                                    <Tag color="gold">ACTIVE</Tag>
+                                                                ) : null}
+                                                                <Tag color={
+                                                                    assignment.compliance_status === 'APPROVED' ? 'green' :
+                                                                        assignment.compliance_status === 'REJECTED' ? 'red' :
+                                                                            assignment.compliance_status === 'SUBMITTED' ? 'blue' :
+                                                                                assignment.compliance_status === 'OVERDUE' ? 'orange' : 'default'
+                                                                }>
+                                                                    {assignment.compliance_status}
+                                                                </Tag>
+                                                            </div>
+                                                        </div>
+                                                        <div className="myreq-assignment-meta">
+                                                            <span className="myreq-assignment-meta-item">
+                                                                <span className="myreq-assignment-meta-label">Deadline</span>
+                                                                <span className="myreq-assignment-meta-value">{formatPhDate(assignment.deadline)}</span>
+                                                            </span>
+                                                            <span className="myreq-assignment-meta-item">
+                                                                <span className="myreq-assignment-meta-label">Submitted</span>
+                                                                <span className="myreq-assignment-meta-value">
+                                                                    {assignment.last_submitted_at ? new Date(assignment.last_submitted_at).toLocaleDateString() : 'N/A'}
+                                                                </span>
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                ));
+                                            })()}
+                                        </div>
+                                    ) : 'N/A'}
                                 </Descriptions.Item>
                                 <Descriptions.Item label="Compliance Status" span={2}>
                                     {getComplianceDisplay(data.compliance_status)}
@@ -311,7 +370,6 @@ const MyRequirementsPage = () => {
                                 <Title level={5}>Uploads</Title>
                                 {(() => {
                                     const submissions = data.submissions ?? [];
-                                    const deadlineKey = toPhDateKey(data.deadline);
                                     const currentUserId = meData?.user?.id;
                                     const assignmentSource = detailData || data;
                                     const isSequential = assignmentSource?.assignment_mode === 'sequential';
@@ -330,9 +388,15 @@ const MyRequirementsPage = () => {
                                             assignment.compliance_status !== 'APPROVED'
                                         )
                                         : null;
+                                    const currentUserAssignment = getUserAssignment(orderedAssignments, currentUserId);
+                                    const deadlineKey = toPhDateKey(
+                                        isSequential
+                                            ? (currentUserAssignment?.deadline || activeAssignment?.deadline || '')
+                                            : (currentUserAssignment?.deadline || data.deadline)
+                                    );
                                     const isActiveForUser = !isSequential
                                         ? true
-                                        : Boolean(detailData) && activeAssignment?.assigned_to_user_id === currentUserId;
+                                        : activeAssignment?.assigned_to_user_id === currentUserId;
                                     const isSubmissionForCurrentUser = (submission: UploadSubmission, userId?: number) => {
                                         if (!userId) {
                                             return false;

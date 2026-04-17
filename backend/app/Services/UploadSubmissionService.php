@@ -311,6 +311,11 @@ class UploadSubmissionService
         return $requirement->assignment_mode === 'sequential';
     }
 
+    private function isParallelRequirement(Requirement $requirement): bool
+    {
+        return $requirement->assignment_mode === 'parallel';
+    }
+
     private function isSequentialCompletionStatus(string $status): bool
     {
         return $status === 'APPROVED';
@@ -370,7 +375,7 @@ class UploadSubmissionService
 
     private function maybeRollMonthlyDeadlineOnApproval(UploadSubmission $submission): void
     {
-        $submission->loadMissing(['requirement', 'requirement.assignments.user']);
+        $submission->loadMissing(['assignment.user', 'assignment.requirement', 'requirement', 'requirement.assignments.user']);
         $requirement = $submission->requirement;
         if (!$requirement) {
             return;
@@ -379,6 +384,15 @@ class UploadSubmissionService
             return;
         }
         if (stripos((string) $requirement->frequency, 'month') === false) {
+            return;
+        }
+
+        if ($this->isParallelRequirement($requirement)) {
+            if (!$submission->assignment) {
+                return;
+            }
+
+            $this->maybeRollParallelAssignmentDeadline($submission->assignment);
             return;
         }
 
@@ -404,25 +418,32 @@ class UploadSubmissionService
             return;
         }
 
-        $base = Carbon::parse($baseDate);
+        $base = Carbon::parse($requirement->deadline ?: $baseDate);
         $now = Carbon::today();
         if ($base->year !== $now->year || $base->month !== $now->month) {
             return;
         }
 
-        $next = $base->copy()->addMonthNoOverflow()->toDateString();
-        $currentDeadline = $requirement->deadline ? Carbon::parse($requirement->deadline) : null;
-        if ($currentDeadline && Carbon::parse($next)->lessThanOrEqualTo($currentDeadline)) {
+        $nextDeadlines = $this->buildNextSequentialDeadlines($assignments);
+        if (empty($nextDeadlines)) {
             return;
         }
 
-        $requirement->update(['deadline' => $next]);
-        $requirement->assignments()->update([
-            'deadline' => $next,
-            'compliance_status' => 'PENDING',
-            'last_submitted_at' => null,
-            'last_approved_at' => null,
-        ]);
+        $nextFinalDeadline = end($nextDeadlines);
+        $currentDeadline = $requirement->deadline ? Carbon::parse($requirement->deadline)->toDateString() : null;
+        if ($currentDeadline && $nextFinalDeadline <= $currentDeadline) {
+            return;
+        }
+
+        $requirement->update(['deadline' => $nextFinalDeadline]);
+        foreach ($requirement->assignments as $assignment) {
+            $assignment->update([
+                'deadline' => $nextDeadlines[$assignment->id] ?? $assignment->deadline,
+                'compliance_status' => 'PENDING',
+                'last_submitted_at' => null,
+                'last_approved_at' => null,
+            ]);
+        }
 
         $requirement->load('assignments.user');
         if ($this->isSequentialRequirement($requirement)) {
@@ -459,5 +480,87 @@ class UploadSubmissionService
                 ]);
             }
         }
+    }
+
+    private function maybeRollParallelAssignmentDeadline(RequirementAssignment $assignment): void
+    {
+        $assignment->loadMissing(['requirement', 'user']);
+        $requirement = $assignment->requirement;
+
+        if (!$requirement || !$this->isParallelRequirement($requirement)) {
+            return;
+        }
+
+        if ($assignment->compliance_status !== 'APPROVED') {
+            return;
+        }
+
+        $currentDeadline = $assignment->deadline;
+        if (!$currentDeadline) {
+            return;
+        }
+
+        $lastApprovedAt = $assignment->last_approved_at;
+        if (!$lastApprovedAt) {
+            return;
+        }
+
+        $today = Carbon::today();
+        $eligibleAt = Carbon::parse($lastApprovedAt)->addDays(2)->startOfDay();
+        if ($today->lt($eligibleAt)) {
+            return;
+        }
+
+        $current = Carbon::parse($currentDeadline)->startOfDay();
+        if ($current->greaterThan($today)) {
+            return;
+        }
+
+        $next = $current->copy();
+        while ($next->lessThanOrEqualTo($today)) {
+            $next->addMonthNoOverflow();
+        }
+
+        if ($next->equalTo($current)) {
+            return;
+        }
+
+        $assignment->update([
+            'deadline' => $next->toDateString(),
+            'compliance_status' => 'PENDING',
+            'last_submitted_at' => null,
+            'last_approved_at' => null,
+        ]);
+
+        $pic = $assignment->user;
+        if (!$pic || !$pic->email) {
+            return;
+        }
+
+        try {
+            Mail::to($pic->email)->send(new RequirementDeadlineMail($assignment->fresh(['user', 'requirement']), 'updated'));
+        } catch (\Throwable $e) {
+            \Log::error('Failed to send parallel monthly deadline update email', [
+                'assignment_id' => $assignment->id,
+                'email' => $pic->email,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    private function buildNextSequentialDeadlines($assignments): array
+    {
+        $nextDeadlines = [];
+        foreach ($assignments as $assignment) {
+            if (!$assignment->deadline) {
+                return [];
+            }
+
+            $nextDeadlines[$assignment->id] = Carbon::parse($assignment->deadline)
+                ->addMonthNoOverflow()
+                ->toDateString();
+        }
+
+        return $nextDeadlines;
     }
 }

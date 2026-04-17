@@ -89,6 +89,23 @@ const toIdList = (value?: string | null) =>
         ? value.split(';').map((item) => Number(item.trim())).filter(Boolean)
         : [];
 
+const buildSequentialDeadlineRows = (
+    picIds: number[],
+    existingRows: SequentialDeadlineRow[] = [],
+    fallbackDeadline?: string | null
+) => {
+    const existingMap = new Map(
+        existingRows
+            .filter((row) => row?.assigned_to_user_id)
+            .map((row) => [row.assigned_to_user_id, row.deadline || ''])
+    );
+
+    return picIds.map((id, index) => ({
+        assigned_to_user_id: id,
+        deadline: existingMap.get(id) ?? (index === picIds.length - 1 ? (fallbackDeadline || '') : ''),
+    }));
+};
+
 const getPositionNames = (ids?: string | null, positions?: Position[]) => {
     const list = toIdList(ids);
     if (!list.length) {
@@ -130,6 +147,12 @@ type RequirementFormValues = {
     deadline?: string;
     auto_deadline_enabled?: boolean;
     assignment_mode?: 'parallel' | 'sequential';
+    sequential_deadlines?: SequentialDeadlineRow[];
+};
+
+type SequentialDeadlineRow = {
+    assigned_to_user_id: number;
+    deadline?: string;
 };
 
 type RequirementPayload = {
@@ -146,6 +169,7 @@ type RequirementPayload = {
     deadline?: string;
     auto_deadline_enabled?: boolean;
     assignment_mode?: 'parallel' | 'sequential';
+    sequential_deadlines?: SequentialDeadlineRow[];
 };
 
 const RequirementsPage = () => {
@@ -324,6 +348,25 @@ const RequirementsPage = () => {
         return toDeadlineDayjs(assignmentDeadline || fallbackDeadline);
     };
 
+    const syncSequentialDeadlines = (picIds: number[], fallbackDeadline?: string | null) => {
+        const currentRows = form.getFieldValue('sequential_deadlines') || [];
+        form.setFieldsValue({
+            person_in_charge_user_ids: picIds,
+            sequential_deadlines: buildSequentialDeadlineRows(picIds, currentRows, fallbackDeadline),
+        });
+    };
+
+    const moveSequentialPic = (fromIndex: number, toIndex: number) => {
+        const picIds: number[] = form.getFieldValue('person_in_charge_user_ids') || [];
+        if (fromIndex < 0 || toIndex < 0 || fromIndex >= picIds.length || toIndex >= picIds.length) {
+            return;
+        }
+
+        const next = [...picIds];
+        [next[toIndex], next[fromIndex]] = [next[fromIndex], next[toIndex]];
+        syncSequentialDeadlines(next, form.getFieldValue('deadline'));
+    };
+
     const createRequirement = useMutation({
         mutationFn: (payload: RequirementPayload) => requirementService.create(payload),
         onSuccess: () => {
@@ -380,7 +423,11 @@ const RequirementsPage = () => {
     const handleAdd = () => {
         setEditingRequirement(null);
         form.resetFields();
-        form.setFieldsValue({ req_id: 'Select agency', assignment_mode: 'parallel' });
+        form.setFieldsValue({
+            req_id: 'Select agency',
+            assignment_mode: 'parallel',
+            sequential_deadlines: [],
+        });
         setIsDrawerOpen(true);
     };
 
@@ -408,6 +455,14 @@ const RequirementsPage = () => {
         const resolvedOrderedPicIds = assignmentMode === 'sequential' && orderedAssignmentPicIds.length
             ? orderedAssignmentPicIds
             : resolvedPicIds;
+        const sequentialDeadlineRows = buildSequentialDeadlineRows(
+            resolvedOrderedPicIds,
+            getOrderedAssignments(record.assignments || [], true).map((assignment) => ({
+                assigned_to_user_id: assignment.assigned_to_user_id,
+                deadline: assignment.deadline ? toPhDateKey(assignment.deadline) : '',
+            })),
+            record.deadline ? toPhDateKey(record.deadline) : ''
+        );
 
         setEditingRequirement(record);
         form.setFieldsValue({
@@ -424,16 +479,24 @@ const RequirementsPage = () => {
             deadline: record.deadline ? toPhDateKey(record.deadline) : '',
             auto_deadline_enabled: record.auto_deadline_enabled ?? false,
             assignment_mode: assignmentMode,
+            sequential_deadlines: sequentialDeadlineRows,
         });
         setIsDrawerOpen(true);
     };
 
     const handleSubmit = (values: RequirementFormValues) => {
+        const assignmentMode = values.assignment_mode || 'parallel';
         const payload: RequirementPayload = {
             ...values,
             position_ids: values.position_ids.length ? values.position_ids.join(';') : null,
             branch_unit_department_ids: values.branch_unit_department_ids.length ? values.branch_unit_department_ids.join(';') : null,
             person_in_charge_user_ids: values.person_in_charge_user_ids.length ? values.person_in_charge_user_ids.join(';') : null,
+            sequential_deadlines: assignmentMode === 'sequential'
+                ? buildSequentialDeadlineRows(values.person_in_charge_user_ids, values.sequential_deadlines || [], values.deadline)
+                : undefined,
+            deadline: assignmentMode === 'parallel'
+                ? values.deadline
+                : undefined,
         };
         if (editingRequirement) {
             updateRequirement.mutate({ id: editingRequirement.id, payload });
@@ -713,6 +776,13 @@ const RequirementsPage = () => {
                                 form.setFieldsValue({ auto_deadline_enabled: false });
                             }
                         }
+                        if (Object.prototype.hasOwnProperty.call(changed, 'assignment_mode')) {
+                            const nextMode = changed.assignment_mode || 'parallel';
+                            if (nextMode === 'sequential') {
+                                const picIds = form.getFieldValue('person_in_charge_user_ids') || [];
+                                syncSequentialDeadlines(picIds, form.getFieldValue('deadline'));
+                            }
+                        }
                     }}
                     onFinish={handleSubmit}
                 >
@@ -850,50 +920,71 @@ const RequirementsPage = () => {
                             showSearch
                             optionFilterProp="label"
                             placeholder="Select person-in-charge"
+                            onChange={(nextPicIds: number[]) => {
+                                const assignmentMode = form.getFieldValue('assignment_mode') || 'parallel';
+                                if (assignmentMode === 'sequential') {
+                                    syncSequentialDeadlines(nextPicIds, form.getFieldValue('deadline'));
+                                    return;
+                                }
+                                form.setFieldsValue({ person_in_charge_user_ids: nextPicIds });
+                            }}
                         />
                     </Form.Item>
                     <Form.Item shouldUpdate>
                         {() => {
                             const mode = form.getFieldValue('assignment_mode') || 'parallel';
                             const picIds: number[] = form.getFieldValue('person_in_charge_user_ids') || [];
-                            if (mode !== 'sequential' || picIds.length < 2) {
+                            const sequentialDeadlines: SequentialDeadlineRow[] = form.getFieldValue('sequential_deadlines') || [];
+                            if (mode !== 'sequential' || !picIds.length) {
                                 return null;
                             }
+                            const finalDeadline = sequentialDeadlines[picIds.length - 1]?.deadline || '';
                             return (
                                 <div style={{ border: '1px solid #f0f0f0', padding: 12, borderRadius: 8, marginBottom: 16 }}>
                                     <Typography.Text type="secondary">
-                                        Arrange the PIC order (top to bottom).
+                                        Arrange the PIC order and set each PIC deadline. The last PIC deadline becomes the final requirement deadline.
                                     </Typography.Text>
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
                                         {picIds.map((id, index) => (
-                                            <div key={id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                                <Text>
-                                                    {index + 1}. {picLabelMap.get(id) || `User #${id}`}
-                                                </Text>
-                                                <Space>
+                                            <div key={id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                                                <div style={{ flex: 1 }}>
+                                                    <Text>
+                                                        {index + 1}. {picLabelMap.get(id) || `User #${id}`}
+                                                    </Text>
+                                                    <Form.Item
+                                                        name={['sequential_deadlines', index, 'deadline']}
+                                                        rules={[{ required: true, message: 'Set a deadline.' }]}
+                                                        style={{ marginTop: 8, marginBottom: 0 }}
+                                                    >
+                                                        <Input type="date" min={todayDate} />
+                                                    </Form.Item>
+                                                    <Form.Item
+                                                        name={['sequential_deadlines', index, 'assigned_to_user_id']}
+                                                        hidden
+                                                    >
+                                                        <Input type="hidden" />
+                                                    </Form.Item>
+                                                </div>
+                                                <Space direction="vertical">
                                                     <Button
                                                         size="small"
                                                         icon={<ArrowUpOutlined />}
                                                         disabled={index === 0}
-                                                        onClick={() => {
-                                                            const next = [...picIds];
-                                                            [next[index - 1], next[index]] = [next[index], next[index - 1]];
-                                                            form.setFieldsValue({ person_in_charge_user_ids: next });
-                                                        }}
+                                                        onClick={() => moveSequentialPic(index, index - 1)}
                                                     />
                                                     <Button
                                                         size="small"
                                                         icon={<ArrowDownOutlined />}
                                                         disabled={index === picIds.length - 1}
-                                                        onClick={() => {
-                                                            const next = [...picIds];
-                                                            [next[index + 1], next[index]] = [next[index], next[index + 1]];
-                                                            form.setFieldsValue({ person_in_charge_user_ids: next });
-                                                        }}
+                                                        onClick={() => moveSequentialPic(index, index + 1)}
                                                     />
                                                 </Space>
                                             </div>
                                         ))}
+                                    </div>
+                                    <div style={{ marginTop: 12 }}>
+                                        <Typography.Text strong>Final Deadline: </Typography.Text>
+                                        <Typography.Text>{finalDeadline ? formatPhDate(finalDeadline) : 'Set the last PIC deadline.'}</Typography.Text>
                                     </div>
                                 </div>
                             );
@@ -918,8 +1009,19 @@ const RequirementsPage = () => {
                             </Form.Item>
                         </Col>
                     </Row>
-                    <Form.Item label="Deadline" name="deadline">
-                        <Input type="date" min={todayDate} />
+                    <Form.Item shouldUpdate>
+                        {() => {
+                            const assignmentMode = form.getFieldValue('assignment_mode') || 'parallel';
+                            if (assignmentMode !== 'parallel') {
+                                return null;
+                            }
+
+                            return (
+                                <Form.Item label="Deadline" name="deadline">
+                                    <Input type="date" min={todayDate} />
+                                </Form.Item>
+                            );
+                        }}
                     </Form.Item>
                     <Form.Item shouldUpdate>
                         {() => {
@@ -1010,30 +1112,38 @@ const RequirementsPage = () => {
 
                                             return orderedAssignments.map((asgn, index) => (
                                                 <div key={asgn.id} className="requirements-assignment-item">
-                                                    <Space>
-                                                        <Text strong>
-                                                            {isSequential ? `${index + 1}. ` : ''}{asgn.user?.employee_name}
+                                                    <div className="requirements-assignment-header">
+                                                        <Text strong className="requirements-assignment-name">
+                                                            {isSequential ? `${index + 1}. ` : ''}{asgn.user?.employee_name || 'N/A'}
                                                         </Text>
-                                                        {isSequential && activeAssignmentId === asgn.id ? (
-                                                            <Tag color="gold">ACTIVE</Tag>
-                                                        ) : null}
-                                                        <Tag color={
-                                                            asgn.compliance_status === 'APPROVED' ? 'green' :
-                                                                asgn.compliance_status === 'REJECTED' ? 'red' :
-                                                                    asgn.compliance_status === 'SUBMITTED' ? 'blue' :
-                                                                        asgn.compliance_status === 'OVERDUE' ? 'orange' : 'default'
-                                                        }>
-                                                            {asgn.compliance_status}
-                                                        </Tag>
-                                                        <Text type="secondary">
-                                                            Deadline: {formatPhDate(asgn.deadline)}
-                                                        </Text>
-                                                        {asgn.last_submitted_at && (
-                                                            <Text type="secondary">
-                                                                Submitted: {new Date(asgn.last_submitted_at).toLocaleDateString()}
-                                                            </Text>
-                                                        )}
-                                                    </Space>
+                                                        <div className="requirements-assignment-tags">
+                                                            {isSequential && activeAssignmentId === asgn.id ? (
+                                                                <Tag color="gold">ACTIVE</Tag>
+                                                            ) : null}
+                                                            <Tag color={
+                                                                asgn.compliance_status === 'APPROVED' ? 'green' :
+                                                                    asgn.compliance_status === 'REJECTED' ? 'red' :
+                                                                        asgn.compliance_status === 'SUBMITTED' ? 'blue' :
+                                                                            asgn.compliance_status === 'OVERDUE' ? 'orange' : 'default'
+                                                            }>
+                                                                {asgn.compliance_status}
+                                                            </Tag>
+                                                        </div>
+                                                    </div>
+                                                    <div className="requirements-assignment-meta">
+                                                        <span className="requirements-assignment-meta-item">
+                                                            <span className="requirements-assignment-meta-label">Deadline</span>
+                                                            <span className="requirements-assignment-meta-value">{formatPhDate(asgn.deadline)}</span>
+                                                        </span>
+                                                        <span className="requirements-assignment-meta-item">
+                                                            <span className="requirements-assignment-meta-label">Submitted</span>
+                                                            <span className="requirements-assignment-meta-value">
+                                                                {asgn.last_submitted_at
+                                                                    ? new Date(asgn.last_submitted_at).toLocaleDateString()
+                                                                    : 'N/A'}
+                                                            </span>
+                                                        </span>
+                                                    </div>
                                                 </div>
                                             ));
                                         })()}
@@ -1048,14 +1158,18 @@ const RequirementsPage = () => {
                             <Descriptions.Item label="Schedule">
                                 {detailData?.schedule || 'N/A'}
                             </Descriptions.Item>
-                            <Descriptions.Item label={detailData?.assignment_mode === 'parallel' ? 'Base Deadline' : 'Deadline'}>
+                            <Descriptions.Item label={detailData?.assignment_mode === 'parallel' ? 'Base Deadline' : 'Final Deadline'}>
                                 <Space direction="vertical" size={0}>
                                     <span>{formatPhDate(detailData?.deadline)}</span>
                                     {detailData?.assignment_mode === 'parallel' ? (
                                         <Typography.Text type="secondary">
                                             Live deadlines follow each PIC assignment.
                                         </Typography.Text>
-                                    ) : null}
+                                    ) : (
+                                        <Typography.Text type="secondary">
+                                            The final deadline follows the last PIC in the sequence.
+                                        </Typography.Text>
+                                    )}
                                 </Space>
                             </Descriptions.Item>
                             <Descriptions.Item label="Auto-advance Monthly Deadline">

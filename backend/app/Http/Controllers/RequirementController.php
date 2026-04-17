@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use Carbon\Carbon;
 use App\Models\Requirement;
 use App\Models\User;
 use Illuminate\Http\Request;
@@ -116,8 +117,9 @@ class RequirementController extends Controller
         })->get();
 
         $requirements->each(function ($requirement) use ($user) {
-            $assignment = $requirement->assignments->first();
+            $assignment = $this->resolveViewerAssignment($requirement, $user) ?? $requirement->assignments->first();
             $requirement->compliance_status = $assignment ? $assignment->compliance_status : 'PENDING';
+            $this->applyViewerDeadlineContext($requirement, $user);
         });
 
         return response()->json($requirements);
@@ -212,6 +214,9 @@ class RequirementController extends Controller
             'position_ids' => 'nullable',
             'branch_unit_department_ids' => 'nullable',
             'person_in_charge_user_ids' => 'nullable',
+            'sequential_deadlines' => 'nullable|array',
+            'sequential_deadlines.*.assigned_to_user_id' => 'required_with:sequential_deadlines|integer',
+            'sequential_deadlines.*.deadline' => 'nullable|date',
         ]);
 
         return DB::transaction(function () use ($validated, $request) {
@@ -229,9 +234,19 @@ class RequirementController extends Controller
             $validated['branch_unit_department_ids'] = $this->normalizeIdList($validated['branch_unit_department_ids'] ?? null);
             $validated['person_in_charge_user_ids'] = $this->normalizeIdList($validated['person_in_charge_user_ids'] ?? null);
 
+            $picUserIds = $this->parseIdList($validated['person_in_charge_user_ids']);
+            $sequentialDeadlines = $this->resolveSequentialDeadlines(
+                $validated['assignment_mode'],
+                $picUserIds,
+                $request->input('sequential_deadlines')
+            );
+
+            if ($validated['assignment_mode'] === 'sequential' && !empty($sequentialDeadlines)) {
+                $validated['deadline'] = $this->deriveSequentialRequirementDeadline($sequentialDeadlines);
+            }
+
             $requirement = Requirement::create($validated);
 
-            $picUserIds = $this->parseIdList($validated['person_in_charge_user_ids']);
             $assignments = [];
             $sequence = 1;
             foreach ($picUserIds as $userId) {
@@ -240,7 +255,9 @@ class RequirementController extends Controller
                     'requirement_id' => $requirement->id,
                     'assigned_to_user_id' => $userId,
                     'sequence_order' => $validated['assignment_mode'] === 'sequential' ? $sequence : null,
-                    'deadline' => $requirement->deadline,
+                    'deadline' => $validated['assignment_mode'] === 'sequential'
+                        ? ($sequentialDeadlines[$userId] ?? null)
+                        : $requirement->deadline,
                     'compliance_status' => 'PENDING',
                 ]);
                 $sequence++;
@@ -257,6 +274,7 @@ class RequirementController extends Controller
     public function show(Requirement $requirement)
     {
         $this->authorize('view', $requirement);
+        $viewer = Auth::user();
         $requirement->load([
             'agency',
             'assignments.user',
@@ -265,7 +283,11 @@ class RequirementController extends Controller
             'submissions.uploader',
             'submissions.assignment.user',
         ]);
-        $requirement->compliance_status = $this->summarizeComplianceStatus($requirement);
+        $viewerAssignment = $this->resolveViewerAssignment($requirement, $viewer);
+        $this->applyViewerDeadlineContext($requirement, $viewer);
+        $requirement->compliance_status = $viewerAssignment && !$viewer?->hasAnyRole(['Super Admin', 'Compliance & Admin Specialist'])
+            ? $viewerAssignment->compliance_status
+            : $this->summarizeComplianceStatus($requirement);
 
         return response()->json($requirement);
     }
@@ -285,15 +307,26 @@ class RequirementController extends Controller
             'position_ids' => 'nullable',
             'branch_unit_department_ids' => 'nullable',
             'person_in_charge_user_ids' => 'nullable',
+            'sequential_deadlines' => 'nullable|array',
+            'sequential_deadlines.*.assigned_to_user_id' => 'required_with:sequential_deadlines|integer',
+            'sequential_deadlines.*.deadline' => 'nullable|date',
         ]);
 
-        return DB::transaction(function () use ($validated, $requirement) {
+        return DB::transaction(function () use ($validated, $requirement, $request) {
             $originalDeadline = $requirement->deadline;
+            $originalAssignmentMode = $requirement->assignment_mode ?: 'parallel';
+            $originalOrderedPicUserIds = $requirement->assignments()
+                ->orderByRaw('CASE WHEN sequence_order IS NULL THEN 1 ELSE 0 END')
+                ->orderBy('sequence_order')
+                ->orderBy('id')
+                ->pluck('assigned_to_user_id')
+                ->toArray();
             $newAssignments = [];
             $newPicUserIds = null;
+            $sequentialDeadlinesChanged = false;
             $assignmentMode = array_key_exists('assignment_mode', $validated)
                 ? $this->normalizeAssignmentMode($validated['assignment_mode'])
-                : ($requirement->assignment_mode ?: 'parallel');
+                : $originalAssignmentMode;
             if (array_key_exists('schedule', $validated) && $validated['schedule'] === null) {
                 // Keep compatibility with deployments where requirements.schedule is NOT NULL.
                 $validated['schedule'] = '';
@@ -328,9 +361,71 @@ class RequirementController extends Controller
                     }
                 }
                 $requirement->assignments()->whereIn('assigned_to_user_id', $toRemove)->delete();
+            }
 
-                // Add new assignments
-                $toAdd = array_diff($newPicUserIds, $oldPicUserIds);
+            $frequency = $validated['frequency'] ?? $requirement->frequency;
+            $autoDeadlineInput = array_key_exists('auto_deadline_enabled', $validated)
+                ? $validated['auto_deadline_enabled']
+                : $requirement->auto_deadline_enabled;
+            $validated['auto_deadline_enabled'] = $this->normalizeAutoDeadlineFlag($frequency, $autoDeadlineInput);
+
+            $orderedPicUserIds = $newPicUserIds
+                ?? $requirement->assignments()
+                    ->orderByRaw('CASE WHEN sequence_order IS NULL THEN 1 ELSE 0 END')
+                    ->orderBy('sequence_order')
+                    ->orderBy('id')
+                    ->pluck('assigned_to_user_id')
+                    ->toArray();
+
+            $sequentialDeadlinesProvided = array_key_exists('sequential_deadlines', $validated);
+            $sequentialDeadlines = $this->resolveSequentialDeadlines(
+                $assignmentMode,
+                $orderedPicUserIds,
+                $sequentialDeadlinesProvided
+                    ? $request->input('sequential_deadlines')
+                    : $this->serializeSequentialDeadlinesFromAssignments($requirement)
+            );
+
+            if ($assignmentMode === 'sequential') {
+                if (!empty($orderedPicUserIds)) {
+                    $toAdd = array_diff($orderedPicUserIds, $requirement->assignments()->pluck('assigned_to_user_id')->toArray());
+                    foreach ($toAdd as $userId) {
+                        $newAssignments[] = RequirementAssignment::create([
+                            'assignment_id' => 'ASGN-' . strtoupper(\Illuminate\Support\Str::random(10)),
+                            'requirement_id' => $requirement->id,
+                            'assigned_to_user_id' => $userId,
+                            'sequence_order' => null,
+                            'deadline' => $sequentialDeadlines[$userId] ?? null,
+                            'compliance_status' => 'PENDING',
+                        ]);
+                    }
+                }
+
+                foreach ($orderedPicUserIds as $index => $userId) {
+                    $assignment = RequirementAssignment::where('requirement_id', $requirement->id)
+                        ->where('assigned_to_user_id', $userId)
+                        ->first();
+
+                    if (!$assignment) {
+                        continue;
+                    }
+
+                    $nextDeadline = $sequentialDeadlines[$userId] ?? null;
+                    $currentDeadline = $assignment->deadline ? Carbon::parse($assignment->deadline)->toDateString() : null;
+                    if ($currentDeadline !== $nextDeadline) {
+                        $sequentialDeadlinesChanged = true;
+                    }
+
+                    $assignment->update([
+                        'sequence_order' => $index + 1,
+                        'deadline' => $nextDeadline,
+                    ]);
+                }
+
+                $validated['deadline'] = $this->deriveSequentialRequirementDeadline($sequentialDeadlines);
+            } else {
+                $existingUserIds = $requirement->assignments()->pluck('assigned_to_user_id')->toArray();
+                $toAdd = array_diff($orderedPicUserIds, $existingUserIds);
                 foreach ($toAdd as $userId) {
                     $newAssignments[] = RequirementAssignment::create([
                         'assignment_id' => 'ASGN-' . strtoupper(\Illuminate\Support\Str::random(10)),
@@ -340,41 +435,32 @@ class RequirementController extends Controller
                         'compliance_status' => 'PENDING',
                     ]);
                 }
-            }
 
-            if ($assignmentMode === 'sequential') {
-                if ($newPicUserIds !== null) {
-                    foreach ($newPicUserIds as $index => $userId) {
-                        RequirementAssignment::where('requirement_id', $requirement->id)
-                            ->where('assigned_to_user_id', $userId)
-                            ->update(['sequence_order' => $index + 1]);
-                    }
-                } elseif ($assignmentMode !== $requirement->assignment_mode) {
-                    $orderedAssignments = $requirement->assignments()->orderBy('id')->get();
-                    foreach ($orderedAssignments as $index => $assignment) {
-                        $assignment->update(['sequence_order' => $index + 1]);
-                    }
+                if ($assignmentMode !== $requirement->assignment_mode || $newPicUserIds !== null) {
+                    $requirement->assignments()->update(['sequence_order' => null]);
                 }
-            } elseif ($assignmentMode !== $requirement->assignment_mode || $newPicUserIds !== null) {
-                $requirement->assignments()->update(['sequence_order' => null]);
-            }
-
-            $frequency = $validated['frequency'] ?? $requirement->frequency;
-            $autoDeadlineInput = array_key_exists('auto_deadline_enabled', $validated)
-                ? $validated['auto_deadline_enabled']
-                : $requirement->auto_deadline_enabled;
-            $validated['auto_deadline_enabled'] = $this->normalizeAutoDeadlineFlag($frequency, $autoDeadlineInput);
-
-            // Sync deadlines for all assignments if changed
-            if (isset($validated['deadline'])) {
-                $requirement->assignments()->update(['deadline' => $validated['deadline']]);
             }
 
             $requirement->update($validated);
 
+            if ($assignmentMode !== 'sequential' && isset($validated['deadline'])) {
+                $requirement->assignments()->update(['deadline' => $validated['deadline']]);
+            }
+
             $deadlineChanged = array_key_exists('deadline', $validated)
                 && $validated['deadline']
                 && $validated['deadline'] !== $originalDeadline;
+
+            if ($assignmentMode === 'sequential' && !$deadlineChanged) {
+                $deadlineChanged = $sequentialDeadlinesChanged;
+            }
+
+            $workflowChanged = $assignmentMode !== $originalAssignmentMode
+                || ($assignmentMode === 'sequential' && $orderedPicUserIds !== $originalOrderedPicUserIds);
+
+            if (!$deadlineChanged && $workflowChanged) {
+                $deadlineChanged = true;
+            }
 
             if ($deadlineChanged) {
                 $requirement->assignments()->update([
@@ -487,6 +573,84 @@ class RequirementController extends Controller
         return array_values(array_filter(array_map('intval', $parts)));
     }
 
+    private function resolveSequentialDeadlines(string $assignmentMode, array $picUserIds, $rawDeadlines): array
+    {
+        if ($assignmentMode !== 'sequential' || empty($picUserIds)) {
+            return [];
+        }
+
+        if (!is_array($rawDeadlines)) {
+            throw ValidationException::withMessages([
+                'sequential_deadlines' => ['Set a deadline for each PIC in sequential mode.'],
+            ]);
+        }
+
+        $deadlineMap = [];
+        foreach ($rawDeadlines as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $userId = (int) ($row['assigned_to_user_id'] ?? 0);
+            $deadline = isset($row['deadline']) && $row['deadline'] !== ''
+                ? Carbon::parse($row['deadline'])->toDateString()
+                : null;
+
+            if ($userId > 0) {
+                $deadlineMap[$userId] = $deadline;
+            }
+        }
+
+        $ordered = [];
+        $previousDeadline = null;
+        foreach ($picUserIds as $index => $userId) {
+            $deadline = $deadlineMap[$userId] ?? null;
+            if (!$deadline) {
+                throw ValidationException::withMessages([
+                    'sequential_deadlines' => ['Set a deadline for every sequential PIC.'],
+                ]);
+            }
+
+            if ($previousDeadline && Carbon::parse($deadline)->lt(Carbon::parse($previousDeadline))) {
+                throw ValidationException::withMessages([
+                    'sequential_deadlines' => ['Sequential PIC deadlines must stay in sequence order.'],
+                ]);
+            }
+
+            $ordered[$userId] = $deadline;
+            $previousDeadline = $deadline;
+        }
+
+        return $ordered;
+    }
+
+    private function deriveSequentialRequirementDeadline(array $sequentialDeadlines): ?string
+    {
+        if (empty($sequentialDeadlines)) {
+            return null;
+        }
+
+        $deadlines = array_values($sequentialDeadlines);
+        return end($deadlines) ?: null;
+    }
+
+    private function serializeSequentialDeadlinesFromAssignments(Requirement $requirement): array
+    {
+        return $requirement->assignments()
+            ->orderByRaw('CASE WHEN sequence_order IS NULL THEN 1 ELSE 0 END')
+            ->orderBy('sequence_order')
+            ->orderBy('id')
+            ->get()
+            ->map(function (RequirementAssignment $assignment) {
+                return [
+                    'assigned_to_user_id' => $assignment->assigned_to_user_id,
+                    'deadline' => $assignment->deadline ? Carbon::parse($assignment->deadline)->toDateString() : null,
+                ];
+            })
+            ->values()
+            ->all();
+    }
+
     private function summarizeComplianceStatus(Requirement $requirement): string
     {
         if (!$requirement->deadline) {
@@ -518,6 +682,34 @@ class RequirementController extends Controller
         }
 
         return 'Pending (' . $percent . '%)';
+    }
+
+    private function applyViewerDeadlineContext(Requirement $requirement, ?User $viewer): void
+    {
+        if (!$viewer || $viewer->hasAnyRole(['Super Admin', 'Compliance & Admin Specialist'])) {
+            return;
+        }
+
+        if ($requirement->assignment_mode !== 'parallel') {
+            return;
+        }
+
+        $assignment = $this->resolveViewerAssignment($requirement, $viewer);
+
+        if ($assignment?->deadline) {
+            $requirement->deadline = $assignment->deadline;
+        }
+    }
+
+    private function resolveViewerAssignment(Requirement $requirement, ?User $viewer): ?RequirementAssignment
+    {
+        if (!$viewer) {
+            return null;
+        }
+
+        return $requirement->assignments
+            ? $requirement->assignments->firstWhere('assigned_to_user_id', $viewer->id)
+            : $requirement->assignments()->where('assigned_to_user_id', $viewer->id)->first();
     }
 
     private function notifyAssignmentsDeadline($assignments, string $context): void
