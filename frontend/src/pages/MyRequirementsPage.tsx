@@ -570,7 +570,7 @@ const MyRequirementsPage = () => {
                                                                 <Card style={{ width: '100%' }}>
                                                                     <div className="myreq-submission-card">
                                                                         <div className="myreq-submission-header">
-                                                                            <Text strong>{submission.submission_id}</Text>
+                                                                            <Text strong>{submission.submission_id || `Submission #${submission.id}`}</Text>
                                                                             <Tag color={submission.approval_status === 'APPROVED' ? 'success' : submission.approval_status === 'REJECTED' ? 'error' : 'processing'}>
                                                                                 {submission.approval_status}
                                                                             </Tag>
@@ -579,7 +579,7 @@ const MyRequirementsPage = () => {
                                                                             <div className="myreq-submission-item">
                                                                                 <span className="myreq-submission-label">Uploaded by</span>
                                                                                 <span className="myreq-submission-value">
-                                                                                    {submission.uploader?.employee_name || submission.uploader_email}
+                                                                                    {submission.uploader?.employee_name || submission.uploader_email || submission.assignment?.user?.employee_name || 'Unknown'}
                                                                                 </span>
                                                                             </div>
                                                                             {(() => {

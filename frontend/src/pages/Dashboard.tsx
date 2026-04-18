@@ -906,7 +906,7 @@ const Dashboard = () => {
                     <div className="dashboard-latest-upload">
                         <div><Text strong>Requirement:</Text> {requirementDetail?.requirement}</div>
                         <div><Text strong>Submission ID:</Text> {latestSubmission.submission_id}</div>
-                        <div><Text strong>Uploaded By:</Text> {latestSubmission.uploader?.employee_name || latestSubmission.uploader_email || 'Unknown'}</div>
+                        <div><Text strong>Uploaded By:</Text> {latestSubmission.uploader?.employee_name || latestSubmission.uploader_email || latestSubmission.assignment?.user?.employee_name || 'Unknown'}</div>
                         {(() => {
                             const uploadedFor = latestSubmission.assignment?.user?.employee_name;
                             const assignedUserId = latestSubmission.assignment?.assigned_to_user_id;

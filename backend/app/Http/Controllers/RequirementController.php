@@ -851,7 +851,14 @@ class RequirementController extends Controller
                 return (int) $submission->assignment_id === (int) $assignment->id;
             }
 
-            return (int) $submission->uploaded_by_user_id === (int) $assignment->assigned_to_user_id;
+            if ((int) $submission->uploaded_by_user_id === (int) $assignment->assigned_to_user_id) {
+                return true;
+            }
+
+            $assignmentEmail = strtolower((string) ($assignment->user?->email ?? ''));
+            $uploaderEmail = strtolower((string) ($submission->uploader_email ?? ''));
+
+            return $assignmentEmail !== '' && $uploaderEmail !== '' && $assignmentEmail === $uploaderEmail;
         })->values();
     }
 

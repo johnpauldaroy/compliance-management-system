@@ -1277,14 +1277,14 @@ const RequirementsPage = () => {
                                                 <Collapse
                                                     items={items.map((submission) => ({
                                                         key: String(submission.id),
-                                                        label: `${submission.submission_id} - ${submission.uploader?.employee_name || submission.uploader_email || 'Unknown'}`,
+                                                        label: `${submission.submission_id || `Submission #${submission.id}`} - ${submission.uploader?.employee_name || submission.uploader_email || submission.assignment?.user?.employee_name || 'Unknown'}`,
                                                         children: (
                                                             <div className="requirements-submission-card">
                                                                 <div className="requirements-submission-grid">
                                                                     <div className="requirements-submission-item">
                                                                         <span className="requirements-submission-label">Uploaded by</span>
                                                                         <span className="requirements-submission-value">
-                                                                            {submission.uploader?.employee_name || submission.uploader_email}
+                                                                            {submission.uploader?.employee_name || submission.uploader_email || submission.assignment?.user?.employee_name || 'Unknown'}
                                                                         </span>
                                                                     </div>
                                                                     {(() => {

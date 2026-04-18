@@ -483,7 +483,7 @@ const ApprovalsPage = () => {
                                         <div key={submission.id} className="approvals-upload-item">
                                             <div className="approvals-upload-row">
                                                 <div>
-                                                    <div className="approvals-upload-title">{submission.submission_id}</div>
+                                                    <div className="approvals-upload-title">{submission.submission_id || `Submission #${submission.id}`}</div>
                                                     <div className="approvals-upload-subtitle">
                                                         {submission.uploader?.employee_name || submission.uploader_email || 'Unknown'} ·{' '}
                                                         {submission.upload_date ? new Date(submission.upload_date).toLocaleString() : 'N/A'}
@@ -504,7 +504,7 @@ const ApprovalsPage = () => {
                                                     <div className="approvals-submission-item">
                                                         <span className="approvals-submission-label">Uploaded by</span>
                                                         <span className="approvals-submission-value">
-                                                            {submission.uploader?.employee_name || submission.uploader_email || 'Unknown'}
+                                                            {submission.uploader?.employee_name || submission.uploader_email || submission.assignment?.user?.employee_name || 'Unknown'}
                                                         </span>
                                                     </div>
                                                     {(() => {
