@@ -179,6 +179,7 @@ const RequirementsPage = () => {
     const [isDrawerOpen, setIsDrawerOpen] = useState(false);
     const [editingRequirement, setEditingRequirement] = useState<Requirement | null>(null);
     const [detailId, setDetailId] = useState<number | null>(null);
+    const [selectedRequirement, setSelectedRequirement] = useState<Requirement | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState<'all' | 'na' | 'pending' | 'complied' | 'overdue'>('all');
     const [sortField, setSortField] = useState<'id' | 'req_id' | 'requirement'>('id');
@@ -265,8 +266,8 @@ const RequirementsPage = () => {
         queryFn: userService.getAll,
     });
 
-    const { data: detailData, isLoading: isDetailLoading, refetch: refetchDetails } = useQuery<Requirement>({
-        queryKey: ['requirement', detailId],
+    const { data: detailResponse, isLoading: isDetailLoading, error: detailError, refetch: refetchDetails } = useQuery<Requirement>({
+        queryKey: ['requirements-page-detail', detailId],
         queryFn: () => requirementService.show(detailId as number),
         enabled: Boolean(detailId),
     });
@@ -277,6 +278,15 @@ const RequirementsPage = () => {
     });
 
     const currentUserId = meData?.user?.id;
+    const detailData = useMemo<Requirement | undefined>(() => {
+        if (!detailResponse && !selectedRequirement) {
+            return undefined;
+        }
+        return {
+            ...(selectedRequirement || {}),
+            ...(detailResponse || {}),
+        } as Requirement;
+    }, [detailResponse, selectedRequirement]);
 
     const isAdmin = useMemo(() => {
         const roles = meData?.user?.roles || [];
@@ -569,7 +579,10 @@ const RequirementsPage = () => {
                             type="text"
                             icon={<InfoCircleOutlined />}
                             className="requirements-action requirements-action--info"
-                            onClick={() => setDetailId(record.id)}
+                            onClick={() => {
+                                setSelectedRequirement(record);
+                                setDetailId(record.id);
+                            }}
                         />
                     </Tooltip>
                     <Tooltip title="Edit">
@@ -601,6 +614,14 @@ const RequirementsPage = () => {
         const error = requirementsError as any;
         message.error(error.response?.data?.message || 'Failed to load requirements.');
     }, [requirementsError]);
+
+    useEffect(() => {
+        if (!detailError || !detailId) {
+            return;
+        }
+        const error = detailError as any;
+        message.error(error.response?.data?.message || 'Failed to load requirement details.');
+    }, [detailError, detailId]);
 
     const requirements = useMemo<Requirement[]>(() => requirementsResponse?.data ?? [], [requirementsResponse]);
 
@@ -1054,13 +1075,18 @@ const RequirementsPage = () => {
             <Drawer
                 title="Requirement Details"
                 open={Boolean(detailId)}
-                onClose={() => setDetailId(null)}
+                onClose={() => {
+                    setDetailId(null);
+                    setSelectedRequirement(null);
+                }}
                 width={840}
                 className="requirements-drawer"
                 destroyOnClose
             >
                 {isDetailLoading ? (
                     <Text type="secondary">Loading...</Text>
+                ) : !detailData ? (
+                    <Text type="secondary">No details found.</Text>
                 ) : (
                     <>
                         <Descriptions column={2} bordered size="small">

@@ -104,8 +104,8 @@ const MyRequirementsPage = () => {
         queryFn: () => authService.me(),
     });
 
-    const { data: detailData, isLoading: isDetailLoading, refetch: refetchDetails } = useQuery<Requirement>({
-        queryKey: ['requirement', detailId],
+    const { data: detailData, isLoading: isDetailLoading, error: detailError, refetch: refetchDetails } = useQuery<Requirement>({
+        queryKey: ['my-requirement-detail', detailId],
         queryFn: () => requirementService.show(detailId as number),
         enabled: Boolean(detailId),
     });
@@ -116,6 +116,14 @@ const MyRequirementsPage = () => {
         const error = requirementsError as { response?: { data?: { message?: string } } };
         message.error(error.response?.data?.message || 'Failed to load requirements.');
     }, [requirementsError]);
+
+    useEffect(() => {
+        if (!detailError || !detailId) {
+            return;
+        }
+        const error = detailError as { response?: { data?: { message?: string } } };
+        message.error(error.response?.data?.message || 'Failed to load requirement details.');
+    }, [detailError, detailId]);
 
     const isAdmin = useMemo(() => {
         const roles = meData?.user?.roles || [];
@@ -290,17 +298,23 @@ const MyRequirementsPage = () => {
             <Drawer
                 title="Requirement Details"
                 open={Boolean(detailId)}
-                onClose={() => setDetailId(null)}
+                onClose={() => {
+                    setDetailId(null);
+                    setSelectedRequirement(null);
+                }}
                 width={840}
                 destroyOnClose
                 className="requirements-drawer"
             >
                 {(() => {
-                                    const data = detailData || selectedRequirement;
+                    const data = {
+                        ...(selectedRequirement || {}),
+                        ...(detailData || {}),
+                    } as Requirement;
                     if (isDetailLoading) {
                         return <Text type="secondary">Loading...</Text>;
                     }
-                    if (!data) {
+                    if (!selectedRequirement && !detailData) {
                         return <Text type="secondary">No details found.</Text>;
                     }
                     return (
@@ -391,7 +405,7 @@ const MyRequirementsPage = () => {
                                 {(() => {
                                     const submissions = data.submissions ?? [];
                                     const currentUserId = meData?.user?.id;
-                                    const assignmentSource = detailData || data;
+                                    const assignmentSource = data;
                                     const isSequential = assignmentSource?.assignment_mode === 'sequential';
                                     const orderedAssignments = isSequential
                                         ? [...(assignmentSource?.assignments || [])].sort((a, b) => {

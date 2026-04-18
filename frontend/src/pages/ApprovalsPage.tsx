@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { requirementService, uploadService } from '../services/apiService';
 import { authService } from '../services/authService';
 import type { ColumnsType } from 'antd/es/table';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import './ApprovalsPage.css';
 
 const { Title } = Typography;
@@ -48,6 +48,7 @@ const ApprovalsPage = () => {
     const [activeId, setActiveId] = useState<number | null>(null);
     const [activeRequirementName, setActiveRequirementName] = useState<string>('');
     const [detailRequirementId, setDetailRequirementId] = useState<number | null>(null);
+    const [detailRequirementSnapshot, setDetailRequirementSnapshot] = useState<any | null>(null);
     const [filesModalOpen, setFilesModalOpen] = useState(false);
     const [activeFiles, setActiveFiles] = useState<any[]>([]);
     const [activeSubmissionId, setActiveSubmissionId] = useState<number | null>(null);
@@ -59,11 +60,25 @@ const ApprovalsPage = () => {
         queryKey: ['me'],
         queryFn: authService.me,
     });
-    const { data: requirementDetail, isLoading: detailLoading } = useQuery({
-        queryKey: ['requirement-detail', detailRequirementId],
+    const { data: requirementDetailResponse, isLoading: detailLoading, error: detailError } = useQuery({
+        queryKey: ['approvals-requirement-detail', detailRequirementId],
         queryFn: () => requirementService.show(detailRequirementId as number),
         enabled: Boolean(detailRequirementId),
     });
+    const requirementDetail = (requirementDetailResponse || detailRequirementSnapshot)
+        ? {
+            ...(detailRequirementSnapshot || {}),
+            ...(requirementDetailResponse || {}),
+        }
+        : undefined;
+
+    useEffect(() => {
+        if (!detailError || !detailRequirementId) {
+            return;
+        }
+        const error = detailError as any;
+        message.error(error.response?.data?.message || 'Failed to load requirement details.');
+    }, [detailError, detailRequirementId]);
 
     const approveMutation = useMutation({
         mutationFn: ({ id, remarks }: { id: number, remarks: string }) => uploadService.approve(id, remarks),
@@ -140,6 +155,8 @@ const ApprovalsPage = () => {
             message.warning('Requirement details not available.');
             return;
         }
+        const snapshot = filteredUploads.find((submission: any) => submission.requirement?.id === requirementId)?.requirement || null;
+        setDetailRequirementSnapshot(snapshot);
         setDetailRequirementId(requirementId);
         setDetailOpen(true);
     };
@@ -358,13 +375,19 @@ const ApprovalsPage = () => {
             <Drawer
                 title="Requirement Details"
                 open={detailOpen}
-                onClose={() => setDetailOpen(false)}
+                onClose={() => {
+                    setDetailOpen(false);
+                    setDetailRequirementId(null);
+                    setDetailRequirementSnapshot(null);
+                }}
                 width={760}
                 destroyOnClose
                 className="approvals-detail-drawer"
             >
                 {detailLoading ? (
                     <Spin />
+                ) : !requirementDetail ? (
+                    <Empty description="No details found" />
                 ) : (
                     <>
                         <Descriptions column={2} bordered size="small">
