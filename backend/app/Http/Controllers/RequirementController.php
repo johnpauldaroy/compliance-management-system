@@ -748,7 +748,7 @@ class RequirementController extends Controller
             return;
         }
 
-        $requirement->assignments->each(function (RequirementAssignment $assignment) {
+        $requirement->assignments->each(function (RequirementAssignment $assignment) use ($requirement) {
             $state = $this->buildAssignmentState($requirement, $assignment);
             $assignment->compliance_status = $state['status'];
             $assignment->last_submitted_at = $state['last_submitted_at'];
