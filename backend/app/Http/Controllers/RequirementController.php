@@ -22,7 +22,24 @@ class RequirementController extends Controller
         $perPage = $perPage > 0 ? min($perPage, 200) : 25;
         $today = Carbon::today()->toDateString();
 
-        $query = Requirement::with(['agency', 'assignments.user', 'assignments.submissions']);
+        $query = Requirement::with([
+            'agency',
+            'assignments.user',
+            'assignments.submissions',
+            'submissions' => function ($submissionQuery) {
+                $submissionQuery->select([
+                    'id',
+                    'requirement_id',
+                    'assignment_id',
+                    'uploaded_by_user_id',
+                    'upload_date',
+                    'deadline_at_upload',
+                    'approval_status',
+                    'status_change_on',
+                    'created_at',
+                ]);
+            },
+        ]);
 
         if ($request->filled('agency_id')) {
             $query->where('agency_id', $request->query('agency_id'));
@@ -124,7 +141,9 @@ class RequirementController extends Controller
         $requirements->each(function ($requirement) use ($user) {
             $this->applyComputedAssignmentStatuses($requirement);
             $assignment = $this->resolveViewerAssignment($requirement, $user) ?? $requirement->assignments->first();
-            $requirement->compliance_status = $assignment ? $this->resolveAssignmentStatus($assignment) : 'PENDING';
+            $requirement->compliance_status = $assignment
+                ? $this->buildAssignmentState($requirement, $assignment)['status']
+                : 'PENDING';
             $this->applyViewerDeadlineContext($requirement, $user);
         });
 
@@ -134,7 +153,23 @@ class RequirementController extends Controller
     public function export(Request $request)
     {
         $this->authorize('viewAny', Requirement::class);
-        $query = Requirement::with(['agency', 'assignments.user']);
+        $query = Requirement::with([
+            'agency',
+            'assignments.user',
+            'submissions' => function ($submissionQuery) {
+                $submissionQuery->select([
+                    'id',
+                    'requirement_id',
+                    'assignment_id',
+                    'uploaded_by_user_id',
+                    'upload_date',
+                    'deadline_at_upload',
+                    'approval_status',
+                    'status_change_on',
+                    'created_at',
+                ]);
+            },
+        ]);
 
         if ($request->filled('agency_id')) {
             $query->where('agency_id', $request->query('agency_id'));
@@ -293,7 +328,7 @@ class RequirementController extends Controller
         $viewerAssignment = $this->resolveViewerAssignment($requirement, $viewer);
         $this->applyViewerDeadlineContext($requirement, $viewer);
         $requirement->compliance_status = $viewerAssignment && !$viewer?->hasAnyRole(['Super Admin', 'Compliance & Admin Specialist'])
-            ? $this->resolveAssignmentStatus($viewerAssignment)
+            ? $this->buildAssignmentState($requirement, $viewerAssignment)['status']
             : $this->summarizeComplianceStatus($requirement);
 
         return response()->json($requirement);
@@ -670,7 +705,7 @@ class RequirementController extends Controller
         }
 
         $total = $assignments->count();
-        $statuses = $assignments->map(fn (RequirementAssignment $assignment) => $this->resolveAssignmentStatus($assignment));
+        $statuses = $assignments->map(fn (RequirementAssignment $assignment) => $this->buildAssignmentState($requirement, $assignment)['status']);
         $approved = $statuses->filter(fn (string $status) => $status === 'APPROVED')->count();
         $actuallySubmitted = $statuses->filter(fn (string $status) => $status === 'SUBMITTED')->count();
 
@@ -694,26 +729,54 @@ class RequirementController extends Controller
         }
 
         $requirement->assignments->each(function (RequirementAssignment $assignment) {
-            $assignment->compliance_status = $this->resolveAssignmentStatus($assignment);
+            $state = $this->buildAssignmentState($requirement, $assignment);
+            $assignment->compliance_status = $state['status'];
+            $assignment->last_submitted_at = $state['last_submitted_at'];
+            $assignment->last_approved_at = $state['last_approved_at'];
         });
     }
 
-    private function resolveAssignmentStatus(?RequirementAssignment $assignment): string
+    private function buildAssignmentState(Requirement $requirement, ?RequirementAssignment $assignment): array
     {
         if (!$assignment) {
-            return 'PENDING';
+            return [
+                'status' => 'PENDING',
+                'last_submitted_at' => null,
+                'last_approved_at' => null,
+            ];
         }
 
-        $status = strtoupper((string) ($assignment->compliance_status ?: 'PENDING'));
-        if (in_array($status, ['APPROVED', 'SUBMITTED'], true)) {
-            return $status;
+        $matchingSubmissions = $this->matchAssignmentSubmissions($requirement, $assignment);
+        $latestSubmission = $matchingSubmissions
+            ->sortByDesc(fn ($submission) => $this->submissionTimestamp($submission)?->timestamp ?? 0)
+            ->first();
+        $latestApprovedSubmission = $matchingSubmissions
+            ->where('approval_status', 'APPROVED')
+            ->sortByDesc(fn ($submission) => $this->submissionApprovedTimestamp($submission)?->timestamp ?? 0)
+            ->first();
+
+        $storedStatus = strtoupper((string) ($assignment->compliance_status ?: 'PENDING'));
+        if ($matchingSubmissions->where('approval_status', 'PENDING')->isNotEmpty()) {
+            $status = 'SUBMITTED';
+        } elseif ($latestApprovedSubmission) {
+            $status = 'APPROVED';
+        } elseif (in_array($storedStatus, ['APPROVED', 'SUBMITTED'], true)) {
+            $status = $storedStatus;
+        } elseif ($this->isPastDeadline($assignment->deadline)) {
+            $status = 'OVERDUE';
+        } else {
+            $status = 'PENDING';
         }
 
-        if ($this->isPastDeadline($assignment->deadline)) {
-            return 'OVERDUE';
-        }
-
-        return 'PENDING';
+        return [
+            'status' => $status,
+            'last_submitted_at' => $latestSubmission
+                ? $this->submissionTimestamp($latestSubmission)
+                : $assignment->last_submitted_at,
+            'last_approved_at' => $latestApprovedSubmission
+                ? $this->submissionApprovedTimestamp($latestApprovedSubmission)
+                : $assignment->last_approved_at,
+        ];
     }
 
     private function isPastDeadline($deadline): bool
@@ -726,6 +789,72 @@ class RequirementController extends Controller
             return Carbon::parse($deadline)->startOfDay()->lt(Carbon::today());
         } catch (\Throwable $e) {
             return false;
+        }
+    }
+
+    private function matchAssignmentSubmissions(Requirement $requirement, RequirementAssignment $assignment)
+    {
+        $deadlineKey = $assignment->deadline
+            ? Carbon::parse($assignment->deadline)->toDateString()
+            : ($requirement->deadline ? Carbon::parse($requirement->deadline)->toDateString() : null);
+        if (!$deadlineKey) {
+            return collect();
+        }
+
+        $submissions = $requirement->relationLoaded('submissions')
+            ? $requirement->submissions
+            : ($assignment->relationLoaded('submissions')
+                ? $assignment->submissions
+                : $assignment->submissions()->get());
+
+        return $submissions->filter(function ($submission) use ($assignment, $deadlineKey) {
+            if (!$submission->deadline_at_upload) {
+                return false;
+            }
+
+            try {
+                $submissionDeadlineKey = Carbon::parse($submission->deadline_at_upload)->toDateString();
+            } catch (\Throwable $e) {
+                return false;
+            }
+
+            if ($submissionDeadlineKey !== $deadlineKey) {
+                return false;
+            }
+
+            if ($submission->assignment_id) {
+                return (int) $submission->assignment_id === (int) $assignment->id;
+            }
+
+            return (int) $submission->uploaded_by_user_id === (int) $assignment->assigned_to_user_id;
+        })->values();
+    }
+
+    private function submissionTimestamp($submission): ?Carbon
+    {
+        $timestamp = $submission->upload_date ?? $submission->created_at ?? null;
+        if (!$timestamp) {
+            return null;
+        }
+
+        try {
+            return Carbon::parse($timestamp);
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
+
+    private function submissionApprovedTimestamp($submission): ?Carbon
+    {
+        $timestamp = $submission->status_change_on ?? $submission->upload_date ?? $submission->created_at ?? null;
+        if (!$timestamp) {
+            return null;
+        }
+
+        try {
+            return Carbon::parse($timestamp);
+        } catch (\Throwable $e) {
+            return null;
         }
     }
 
