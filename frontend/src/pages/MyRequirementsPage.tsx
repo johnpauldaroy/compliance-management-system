@@ -121,9 +121,12 @@ const MyRequirementsPage = () => {
         if (!detailError || !detailId) {
             return;
         }
+        if (detailData || selectedRequirement) {
+            return;
+        }
         const error = detailError as { response?: { data?: { message?: string } } };
         message.error(error.response?.data?.message || 'Failed to load requirement details.');
-    }, [detailError, detailId]);
+    }, [detailError, detailId, detailData, selectedRequirement]);
 
     const isAdmin = useMemo(() => {
         const roles = meData?.user?.roles || [];

@@ -76,9 +76,12 @@ const ApprovalsPage = () => {
         if (!detailError || !detailRequirementId) {
             return;
         }
+        if (requirementDetail || detailRequirementSnapshot) {
+            return;
+        }
         const error = detailError as any;
         message.error(error.response?.data?.message || 'Failed to load requirement details.');
-    }, [detailError, detailRequirementId]);
+    }, [detailError, detailRequirementId, requirementDetail, detailRequirementSnapshot]);
 
     const approveMutation = useMutation({
         mutationFn: ({ id, remarks }: { id: number, remarks: string }) => uploadService.approve(id, remarks),

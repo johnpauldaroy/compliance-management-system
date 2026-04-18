@@ -619,9 +619,12 @@ const RequirementsPage = () => {
         if (!detailError || !detailId) {
             return;
         }
+        if (detailData || selectedRequirement) {
+            return;
+        }
         const error = detailError as any;
         message.error(error.response?.data?.message || 'Failed to load requirement details.');
-    }, [detailError, detailId]);
+    }, [detailError, detailId, detailData, selectedRequirement]);
 
     const requirements = useMemo<Requirement[]>(() => requirementsResponse?.data ?? [], [requirementsResponse]);
 

@@ -15,6 +15,8 @@ use Illuminate\Validation\ValidationException;
 
 class RequirementController extends Controller
 {
+    private array $assignmentStateCache = [];
+
     public function index(Request $request)
     {
         $this->authorize('viewAny', Requirement::class);
@@ -319,7 +321,25 @@ class RequirementController extends Controller
         $requirement->load([
             'agency',
             'assignments.user',
-            'assignments.submissions.uploader',
+            'submissions' => function ($query) {
+                $query->select([
+                    'id',
+                    'submission_id',
+                    'requirement_id',
+                    'assignment_id',
+                    'uploaded_by_user_id',
+                    'uploader_email',
+                    'upload_date',
+                    'deadline_at_upload',
+                    'comments',
+                    'approval_status',
+                    'status_change_on',
+                    'admin_remarks',
+                    'upload_year',
+                    'created_at',
+                    'updated_at',
+                ])->orderByDesc('upload_date');
+            },
             'submissions.files',
             'submissions.uploader',
             'submissions.assignment.user',
@@ -746,6 +766,11 @@ class RequirementController extends Controller
             ];
         }
 
+        $cacheKey = $requirement->id . ':' . $assignment->id;
+        if (array_key_exists($cacheKey, $this->assignmentStateCache)) {
+            return $this->assignmentStateCache[$cacheKey];
+        }
+
         $matchingSubmissions = $this->matchAssignmentSubmissions($requirement, $assignment);
         $latestSubmission = $matchingSubmissions
             ->sortByDesc(fn ($submission) => $this->submissionTimestamp($submission)?->timestamp ?? 0)
@@ -768,7 +793,7 @@ class RequirementController extends Controller
             $status = 'PENDING';
         }
 
-        return [
+        return $this->assignmentStateCache[$cacheKey] = [
             'status' => $status,
             'last_submitted_at' => $latestSubmission
                 ? $this->submissionTimestamp($latestSubmission)
