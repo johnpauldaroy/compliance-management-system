@@ -126,16 +126,36 @@ const MyRequirementsPage = () => {
 
     const canEditApproval = isAdmin;
 
-    const getComplianceDisplay = (status?: string) =>
-        status ?? 'N/A';
+    const getComplianceDisplay = (status?: string) => {
+        const normalized = (status || '').trim().toUpperCase();
+        if (!normalized) {
+            return 'N/A';
+        }
+        if (normalized === 'APPROVED') {
+            return 'Complied';
+        }
+        if (normalized === 'OVERDUE') {
+            return 'Overdue';
+        }
+        if (normalized === 'SUBMITTED') {
+            return 'For Approval';
+        }
+        if (normalized === 'PENDING' || normalized === 'REJECTED') {
+            return 'Pending';
+        }
+        return status ?? 'N/A';
+    };
 
     const getStatusColor = (status?: string) => {
         const normalized = (status || '').trim().toLowerCase();
         if (normalized.startsWith('complied')) {
             return 'success';
         }
-        if (normalized.startsWith('late')) {
+        if (normalized.startsWith('late') || normalized.startsWith('overdue')) {
             return 'error';
+        }
+        if (normalized.startsWith('for approval')) {
+            return 'processing';
         }
         if (normalized.startsWith('pending')) {
             return 'processing';

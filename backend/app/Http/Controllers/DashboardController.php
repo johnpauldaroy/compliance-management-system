@@ -16,6 +16,7 @@ class DashboardController extends Controller
     {
         $totalRequirements = Requirement::count();
         $totalAgencies = Agency::count();
+        $today = Carbon::today()->toDateString();
 
         $compliantCount = Requirement::whereNotNull('deadline')
             ->whereHas('assignments')
@@ -25,18 +26,22 @@ class DashboardController extends Controller
             ->count();
 
         $overdueCount = Requirement::whereNotNull('deadline')
-            ->whereHas('assignments', function ($query) {
-                $query->where('compliance_status', 'OVERDUE');
+            ->whereHas('assignments', function ($query) use ($today) {
+                $query->whereNotNull('deadline')
+                    ->whereDate('deadline', '<', $today)
+                    ->whereNotIn('compliance_status', ['APPROVED', 'SUBMITTED']);
             })->count();
 
         $pendingCount = Requirement::whereNotNull('deadline')
-            ->where(function ($query) {
+            ->where(function ($query) use ($today) {
                 $query->whereDoesntHave('assignments')
-                    ->orWhere(function ($subQuery) {
+                    ->orWhere(function ($subQuery) use ($today) {
                         $subQuery->whereHas('assignments', function ($assignmentQuery) {
                             $assignmentQuery->where('compliance_status', '!=', 'APPROVED');
-                        })->whereDoesntHave('assignments', function ($assignmentQuery) {
-                            $assignmentQuery->where('compliance_status', 'OVERDUE');
+                        })->whereDoesntHave('assignments', function ($assignmentQuery) use ($today) {
+                            $assignmentQuery->whereNotNull('deadline')
+                                ->whereDate('deadline', '<', $today)
+                                ->whereNotIn('compliance_status', ['APPROVED', 'SUBMITTED']);
                         });
                     });
             })->count();
@@ -268,7 +273,7 @@ class DashboardController extends Controller
             return 'pending';
         }
 
-        $hasOverdue = $assignments->where('compliance_status', 'OVERDUE')->count() > 0;
+        $hasOverdue = $assignments->contains(fn ($assignment) => $this->resolveCalendarAssignmentState($assignment->compliance_status, $assignment->deadline) === 'overdue');
         if ($hasOverdue) {
             return 'overdue';
         }
@@ -298,7 +303,7 @@ class DashboardController extends Controller
             return 'pending';
         }
 
-        if ($assignments->where('compliance_status', 'OVERDUE')->count() > 0) {
+        if ($assignments->contains(fn ($assignment) => $this->resolveCalendarAssignmentState($assignment->compliance_status, $assignment->deadline) === 'overdue')) {
             return 'overdue';
         }
 
@@ -327,7 +332,7 @@ class DashboardController extends Controller
             return 'for_approval';
         }
 
-        if ($assignments->where('compliance_status', 'OVERDUE')->count() > 0) {
+        if ($assignments->contains(fn ($assignment) => $this->resolveCalendarAssignmentState($assignment->compliance_status, $deadlineKey) === 'overdue')) {
             return 'overdue';
         }
 
@@ -363,19 +368,7 @@ class DashboardController extends Controller
             return 'for_approval';
         }
 
-        if ($assignment->compliance_status === 'OVERDUE') {
-            return 'overdue';
-        }
-
-        if ($assignment->compliance_status === 'APPROVED') {
-            return 'complied';
-        }
-
-        if ($assignment->compliance_status === 'SUBMITTED') {
-            return 'for_approval';
-        }
-
-        return 'pending';
+        return $this->resolveCalendarAssignmentState($assignment->compliance_status, $deadlineKey);
     }
 
     private function summarizeAssignmentStatusForDeadline($requirement, $assignment, string $deadlineKey): string
@@ -390,18 +383,7 @@ class DashboardController extends Controller
             return 'for_approval';
         }
 
-        $status = $assignment->compliance_status;
-        if ($status === 'OVERDUE') {
-            return 'overdue';
-        }
-        if ($status === 'APPROVED') {
-            return 'complied';
-        }
-        if ($status === 'SUBMITTED') {
-            return 'for_approval';
-        }
-
-        return 'pending';
+        return $this->resolveCalendarAssignmentState($assignment->compliance_status, $deadlineKey);
     }
 
     private function filterSubmissionsByDeadline($submissions, string $deadlineKey, int $assignmentId = null)
@@ -431,5 +413,37 @@ class DashboardController extends Controller
             return false;
         }
         return true;
+    }
+
+    private function resolveCalendarAssignmentState(?string $status, $deadline): string
+    {
+        $normalized = strtoupper((string) ($status ?: 'PENDING'));
+
+        if ($normalized === 'APPROVED') {
+            return 'complied';
+        }
+
+        if ($normalized === 'SUBMITTED') {
+            return 'for_approval';
+        }
+
+        if ($this->isPastDeadline($deadline)) {
+            return 'overdue';
+        }
+
+        return 'pending';
+    }
+
+    private function isPastDeadline($deadline): bool
+    {
+        if (!$deadline) {
+            return false;
+        }
+
+        try {
+            return Carbon::parse($deadline)->startOfDay()->lt(Carbon::today());
+        } catch (\Throwable $e) {
+            return false;
+        }
     }
 }

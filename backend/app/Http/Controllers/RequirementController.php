@@ -20,6 +20,7 @@ class RequirementController extends Controller
         $this->authorize('viewAny', Requirement::class);
         $perPage = (int) $request->query('per_page', 25);
         $perPage = $perPage > 0 ? min($perPage, 200) : 25;
+        $today = Carbon::today()->toDateString();
 
         $query = Requirement::with(['agency', 'assignments.user', 'assignments.submissions']);
 
@@ -43,18 +44,22 @@ class RequirementController extends Controller
                     });
             } elseif ($status === 'overdue') {
                 $query->whereNotNull('deadline')
-                    ->whereHas('assignments', function ($assignmentQuery) {
-                        $assignmentQuery->where('compliance_status', 'OVERDUE');
+                    ->whereHas('assignments', function ($assignmentQuery) use ($today) {
+                        $assignmentQuery->whereNotNull('deadline')
+                            ->whereDate('deadline', '<', $today)
+                            ->whereNotIn('compliance_status', ['APPROVED', 'SUBMITTED']);
                     });
             } elseif ($status === 'pending') {
                 $query->whereNotNull('deadline')
-                    ->where(function ($statusQuery) {
+                    ->where(function ($statusQuery) use ($today) {
                         $statusQuery->whereDoesntHave('assignments')
-                            ->orWhere(function ($subQuery) {
+                            ->orWhere(function ($subQuery) use ($today) {
                                 $subQuery->whereHas('assignments', function ($assignmentQuery) {
                                     $assignmentQuery->where('compliance_status', '!=', 'APPROVED');
-                                })->whereDoesntHave('assignments', function ($assignmentQuery) {
-                                    $assignmentQuery->where('compliance_status', 'OVERDUE');
+                                })->whereDoesntHave('assignments', function ($assignmentQuery) use ($today) {
+                                    $assignmentQuery->whereNotNull('deadline')
+                                        ->whereDate('deadline', '<', $today)
+                                        ->whereNotIn('compliance_status', ['APPROVED', 'SUBMITTED']);
                                 });
                             });
                     });
@@ -117,8 +122,9 @@ class RequirementController extends Controller
         })->get();
 
         $requirements->each(function ($requirement) use ($user) {
+            $this->applyComputedAssignmentStatuses($requirement);
             $assignment = $this->resolveViewerAssignment($requirement, $user) ?? $requirement->assignments->first();
-            $requirement->compliance_status = $assignment ? $assignment->compliance_status : 'PENDING';
+            $requirement->compliance_status = $assignment ? $this->resolveAssignmentStatus($assignment) : 'PENDING';
             $this->applyViewerDeadlineContext($requirement, $user);
         });
 
@@ -283,10 +289,11 @@ class RequirementController extends Controller
             'submissions.uploader',
             'submissions.assignment.user',
         ]);
+        $this->applyComputedAssignmentStatuses($requirement);
         $viewerAssignment = $this->resolveViewerAssignment($requirement, $viewer);
         $this->applyViewerDeadlineContext($requirement, $viewer);
         $requirement->compliance_status = $viewerAssignment && !$viewer?->hasAnyRole(['Super Admin', 'Compliance & Admin Specialist'])
-            ? $viewerAssignment->compliance_status
+            ? $this->resolveAssignmentStatus($viewerAssignment)
             : $this->summarizeComplianceStatus($requirement);
 
         return response()->json($requirement);
@@ -663,11 +670,9 @@ class RequirementController extends Controller
         }
 
         $total = $assignments->count();
-        $approved = $assignments->where('compliance_status', 'APPROVED')->count();
-        $submitted = $assignments->whereIn('compliance_status', ['SUBMITTED', 'REJECTED', 'PENDING'])->count(); // Simplified for now
-
-        // Count actually submitted but not approved
-        $actuallySubmitted = $assignments->where('compliance_status', 'SUBMITTED')->count();
+        $statuses = $assignments->map(fn (RequirementAssignment $assignment) => $this->resolveAssignmentStatus($assignment));
+        $approved = $statuses->filter(fn (string $status) => $status === 'APPROVED')->count();
+        $actuallySubmitted = $statuses->filter(fn (string $status) => $status === 'SUBMITTED')->count();
 
         if ($approved === $total) {
             return 'Complied (100%)';
@@ -675,13 +680,53 @@ class RequirementController extends Controller
 
         $percent = $total === 0 ? 0 : (int) round(100 * ($approved + $actuallySubmitted) / $total);
 
-        // Check if any is overdue
-        $hasOverdue = $assignments->where('compliance_status', 'OVERDUE')->count() > 0;
-        if ($actuallySubmitted === 0 && $approved === 0 && $hasOverdue) {
-            return 'Late (100%)';
+        if ($statuses->contains('OVERDUE')) {
+            return 'Late (' . $percent . '%)';
         }
 
         return 'Pending (' . $percent . '%)';
+    }
+
+    private function applyComputedAssignmentStatuses(Requirement $requirement): void
+    {
+        if (!$requirement->relationLoaded('assignments')) {
+            return;
+        }
+
+        $requirement->assignments->each(function (RequirementAssignment $assignment) {
+            $assignment->compliance_status = $this->resolveAssignmentStatus($assignment);
+        });
+    }
+
+    private function resolveAssignmentStatus(?RequirementAssignment $assignment): string
+    {
+        if (!$assignment) {
+            return 'PENDING';
+        }
+
+        $status = strtoupper((string) ($assignment->compliance_status ?: 'PENDING'));
+        if (in_array($status, ['APPROVED', 'SUBMITTED'], true)) {
+            return $status;
+        }
+
+        if ($this->isPastDeadline($assignment->deadline)) {
+            return 'OVERDUE';
+        }
+
+        return 'PENDING';
+    }
+
+    private function isPastDeadline($deadline): bool
+    {
+        if (!$deadline) {
+            return false;
+        }
+
+        try {
+            return Carbon::parse($deadline)->startOfDay()->lt(Carbon::today());
+        } catch (\Throwable $e) {
+            return false;
+        }
     }
 
     private function applyViewerDeadlineContext(Requirement $requirement, ?User $viewer): void
