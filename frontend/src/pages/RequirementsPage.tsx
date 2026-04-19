@@ -195,7 +195,6 @@ const RequirementsPage = () => {
     const [activeFiles, setActiveFiles] = useState<UploadFileRecord[]>([]);
     const [activeSubmissionId, setActiveSubmissionId] = useState<number | null>(null);
 
-    const todayDate = useMemo(() => new Date().toISOString().split('T')[0], []);
     const isMonthlyFrequency = (value?: string | null) => (value || '').toLowerCase().includes('month');
 
     const statusFilterFromUrl = useMemo(() => {
@@ -980,7 +979,7 @@ const RequirementsPage = () => {
                                                         rules={[{ required: true, message: 'Set a deadline.' }]}
                                                         style={{ marginTop: 8, marginBottom: 0 }}
                                                     >
-                                                        <Input type="date" min={todayDate} />
+                                                        <Input type="date" />
                                                     </Form.Item>
                                                     <Form.Item
                                                         name={['sequential_deadlines', index, 'assigned_to_user_id']}
@@ -1042,7 +1041,7 @@ const RequirementsPage = () => {
 
                             return (
                                 <Form.Item label="Deadline" name="deadline">
-                                    <Input type="date" min={todayDate} />
+                                    <Input type="date" />
                                 </Form.Item>
                             );
                         }}
