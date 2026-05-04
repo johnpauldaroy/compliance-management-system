@@ -14,25 +14,28 @@ class DashboardController extends Controller
 {
     public function stats()
     {
-        $totalRequirements = Requirement::count();
+        $totalRequirements = Requirement::active()->count();
         $totalAgencies = Agency::count();
         $today = Carbon::today()->toDateString();
 
-        $compliantCount = Requirement::whereNotNull('deadline')
+        $compliantCount = Requirement::active()
+            ->whereNotNull('deadline')
             ->whereHas('assignments')
             ->whereDoesntHave('assignments', function ($query) {
                 $query->where('compliance_status', '!=', 'APPROVED');
             })
             ->count();
 
-        $overdueCount = Requirement::whereNotNull('deadline')
+        $overdueCount = Requirement::active()
+            ->whereNotNull('deadline')
             ->whereHas('assignments', function ($query) use ($today) {
                 $query->whereNotNull('deadline')
                     ->whereDate('deadline', '<', $today)
                     ->whereNotIn('compliance_status', ['APPROVED', 'SUBMITTED']);
             })->count();
 
-        $pendingCount = Requirement::whereNotNull('deadline')
+        $pendingCount = Requirement::active()
+            ->whereNotNull('deadline')
             ->where(function ($query) use ($today) {
                 $query->whereDoesntHave('assignments')
                     ->orWhere(function ($subQuery) use ($today) {
@@ -46,7 +49,9 @@ class DashboardController extends Controller
                     });
             })->count();
 
-        $forApprovalCount = UploadSubmission::where('approval_status', 'PENDING')->count();
+        $forApprovalCount = UploadSubmission::where('approval_status', 'PENDING')
+            ->whereHas('requirement', fn ($query) => $query->active())
+            ->count();
 
         $complianceRate = $totalRequirements > 0
             ? round(($compliantCount / $totalRequirements) * 100, 1)
@@ -79,7 +84,10 @@ class DashboardController extends Controller
         $userId = $user?->id;
         $isPic = $user && $this->isPicUser($user);
 
-        $stats = \App\Models\Agency::with(['requirements.assignments'])
+        $stats = \App\Models\Agency::with([
+            'requirements' => fn ($query) => $query->active(),
+            'requirements.assignments',
+        ])
             ->get()
             ->map(function ($agency) use ($isPic, $userId) {
                 $counts = [
@@ -128,17 +136,25 @@ class DashboardController extends Controller
         return response()->json($stats);
     }
 
-    public function calendar()
+    public function calendar(Request $request)
     {
         $user = Auth::user();
         $userId = $user?->id;
         $isPic = $user && $this->isPicUser($user);
+        $month = (string) $request->query('month', Carbon::today()->format('Y-m'));
+        try {
+            $monthStart = Carbon::createFromFormat('Y-m-d', $month . '-01')->startOfDay();
+        } catch (\Throwable $e) {
+            $monthStart = Carbon::today()->startOfMonth();
+        }
+        $monthEnd = $monthStart->copy()->endOfMonth();
 
-        $requirementsQuery = Requirement::with(['assignments.user', 'submissions'])
-            ->where(function ($query) {
-                $query->whereNotNull('deadline')
-                    ->orWhereHas('assignments', function ($assignmentQuery) {
-                        $assignmentQuery->whereNotNull('deadline');
+        $requirementsQuery = Requirement::active()
+            ->with(['assignments.user', 'submissions'])
+            ->where(function ($query) use ($monthStart, $monthEnd) {
+                $query->whereBetween('deadline', [$monthStart->toDateString(), $monthEnd->toDateString()])
+                    ->orWhereHas('assignments', function ($assignmentQuery) use ($monthStart, $monthEnd) {
+                        $assignmentQuery->whereBetween('deadline', [$monthStart->toDateString(), $monthEnd->toDateString()]);
                     });
             });
 

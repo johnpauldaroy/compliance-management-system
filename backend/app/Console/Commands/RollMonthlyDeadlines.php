@@ -18,7 +18,7 @@ class RollMonthlyDeadlines extends Command
         $today = Carbon::today();
         $dryRun = (bool) $this->option('dry-run');
 
-        $requirements = Requirement::with(['assignments.user'])
+        $requirements = Requirement::active()->with(['assignments.user'])
             ->whereNotNull('deadline')
             ->where('auto_deadline_enabled', true)
             ->whereRaw('LOWER(frequency) LIKE ?', ['%month%'])

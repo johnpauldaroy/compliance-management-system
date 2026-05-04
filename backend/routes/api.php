@@ -28,13 +28,17 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/users', [UserController::class, 'index']);
     Route::post('/users', [UserController::class, 'store']);
     Route::post('/users/import', [UserController::class, 'import']);
+    Route::get('/users/{user}/details', [UserController::class, 'details']);
     Route::put('/users/{user}', [UserController::class, 'update']);
     Route::put('/users/{user}/password', [UserController::class, 'resetPassword']);
 
     Route::apiResource('agencies', AgencyController::class);
     Route::apiResource('branch-unit-departments', BranchUnitDepartmentController::class);
     Route::get('/requirements/my', [RequirementController::class, 'myRequirements']);
+    Route::get('/requirements/my/history', [RequirementController::class, 'myRequirementHistory']);
     Route::get('/requirements/export', [RequirementController::class, 'export']);
+    Route::patch('/requirements/{requirement}/deactivate', [RequirementController::class, 'deactivate']);
+    Route::patch('/requirements/{requirement}/reactivate', [RequirementController::class, 'reactivate']);
     Route::apiResource('requirements', RequirementController::class);
     Route::post('/requirements/import', [RequirementImportController::class, 'import']);
     Route::apiResource('submissions', UploadSubmissionController::class)->only(['index', 'store']);

@@ -53,8 +53,11 @@ const Dashboard = () => {
 
     const accessLevel = getAccessLevel(meData?.user?.roles || []);
     const isPic = accessLevel === 'pic';
-    const currentUserId = meData?.user?.id;
     const isAdmin = accessLevel === 'admin' || accessLevel === 'super';
+    const [calendarViewMonth, setCalendarViewMonth] = useState<Date>(dayjs().startOf('month').toDate());
+    const [deadlineModalOpen, setDeadlineModalOpen] = useState(false);
+    const [deadlineSubmitting, setDeadlineSubmitting] = useState(false);
+    const [deadlineForm] = Form.useForm();
 
     const { data: agencyStats, isLoading: agencyLoading } = useQuery({
         queryKey: ['agency-stats'],
@@ -62,23 +65,26 @@ const Dashboard = () => {
     });
 
     const { data: calendarData } = useQuery({
-        queryKey: ['dashboard-calendar'],
-        queryFn: dashboardService.getCalendar,
+        queryKey: ['dashboard-calendar', dayjs(calendarViewMonth).format('YYYY-MM')],
+        queryFn: () => dashboardService.getCalendar({ month: dayjs(calendarViewMonth).format('YYYY-MM') }),
     });
 
     const { data: licenseRequirements, isLoading: licenseLoading } = useQuery({
         queryKey: ['requirements', 'license-dashboard'],
-        queryFn: () => requirementService.getAll({ category: 'License', per_page: 200 }),
+        queryFn: () => requirementService.getAll({ category: 'License', per_page: 100, summary: true }),
+        enabled: isAdmin,
     });
 
     const { data: permitRequirements, isLoading: permitLoading } = useQuery({
         queryKey: ['requirements', 'permit-dashboard'],
-        queryFn: () => requirementService.getAll({ category: 'Permit', per_page: 200 }),
+        queryFn: () => requirementService.getAll({ category: 'Permit', per_page: 100, summary: true }),
+        enabled: isAdmin,
     });
 
     const { data: certificationRequirements, isLoading: certificationLoading } = useQuery({
         queryKey: ['requirements', 'certification-dashboard'],
-        queryFn: () => requirementService.getAll({ category: 'Certification', per_page: 200 }),
+        queryFn: () => requirementService.getAll({ category: 'Certification', per_page: 100, summary: true }),
+        enabled: isAdmin,
     });
 
     const { data: myRequirements, isLoading: myRequirementsLoading } = useQuery({
@@ -89,8 +95,8 @@ const Dashboard = () => {
 
     const { data: allRequirements } = useQuery({
         queryKey: ['requirements', 'all-dashboard'],
-        queryFn: () => requirementService.getAll({ per_page: 5000 }),
-        enabled: isAdmin,
+        queryFn: () => requirementService.getAll({ per_page: 200, summary: true }),
+        enabled: isAdmin && deadlineModalOpen,
     });
 
     const [detailOpen, setDetailOpen] = useState(false);
@@ -126,10 +132,6 @@ const Dashboard = () => {
             approved_at?: string | null;
         }>;
     } | null>(null);
-    const [calendarViewMonth, setCalendarViewMonth] = useState<Date>(dayjs().startOf('month').toDate());
-    const [deadlineModalOpen, setDeadlineModalOpen] = useState(false);
-    const [deadlineSubmitting, setDeadlineSubmitting] = useState(false);
-    const [deadlineForm] = Form.useForm();
     const calendarLayoutRef = useRef<HTMLDivElement | null>(null);
     const calendarLegendRef = useRef<HTMLDivElement | null>(null);
     const calendarToolbarRef = useRef<HTMLDivElement | null>(null);
@@ -402,18 +404,33 @@ const Dashboard = () => {
         setCalendarViewMonth(dayjs(calendarViewMonth).add(1, 'year').toDate());
     };
 
-    const latestSubmission = useMemo(() => {
+    const formatDateTime = (value?: string | null) => {
+        if (!value) {
+            return 'N/A';
+        }
+        return new Date(value).toLocaleString();
+    };
+
+    const formatDateOnly = (value?: string | null) => {
+        if (!value) {
+            return 'N/A';
+        }
+        return new Date(value).toLocaleDateString();
+    };
+
+    const approvedSubmissions = useMemo(() => {
         const submissions = requirementDetail?.submissions || [];
         if (!submissions.length) {
-            return null;
+            return [];
         }
         return submissions
             .slice()
+            .filter((submission: any) => submission.approval_status === 'APPROVED')
             .sort((a: any, b: any) => {
                 const aTime = new Date(a.upload_date || a.created_at || 0).getTime();
                 const bTime = new Date(b.upload_date || b.created_at || 0).getTime();
                 return bTime - aTime;
-            })[0];
+            });
     }, [requirementDetail]);
 
     const handleOpenDetail = (id: number) => {
@@ -867,7 +884,7 @@ const Dashboard = () => {
                                                     icon={<EyeOutlined />}
                                                     onClick={() => handleOpenDetail(item.id)}
                                                 >
-                                                    View latest submission
+                                                    View submissions
                                                 </Button>,
                                             ]}
                                         >
@@ -894,68 +911,81 @@ const Dashboard = () => {
                 </Row>
             ) : null}
             <Modal
-                title="Latest Submission"
+                title="Approved Submissions"
                 open={detailOpen}
-                onCancel={() => setDetailOpen(false)}
+                onCancel={() => {
+                    setDetailOpen(false);
+                    setDetailRequirementId(null);
+                }}
                 footer={null}
                 destroyOnClose
+                width={820}
             >
                 {detailLoading ? (
                     <div className="dashboard-modal-loading">Loading...</div>
-                ) : latestSubmission ? (
-                    <div className="dashboard-latest-upload">
-                        <div><Text strong>Requirement:</Text> {requirementDetail?.requirement}</div>
-                        <div><Text strong>Submission ID:</Text> {latestSubmission.submission_id}</div>
-                        <div><Text strong>Uploaded By:</Text> {latestSubmission.uploader?.employee_name || latestSubmission.uploader_email || latestSubmission.assignment?.user?.employee_name || 'Unknown'}</div>
-                        {(() => {
-                            const uploadedFor = latestSubmission.assignment?.user?.employee_name;
-                            const assignedUserId = latestSubmission.assignment?.assigned_to_user_id;
-                            const showUploadedFor = Boolean(
-                                uploadedFor
-                                && assignedUserId
-                                && assignedUserId !== latestSubmission.uploaded_by_user_id
-                            );
-                            if (!showUploadedFor) {
-                                return null;
-                            }
-                            return <div><Text strong>Uploaded For:</Text> {uploadedFor}</div>;
-                        })()}
-                        <div><Text strong>Uploaded At:</Text> {latestSubmission.upload_date ? new Date(latestSubmission.upload_date).toLocaleString() : 'N/A'}</div>
-                        <div><Text strong>Status:</Text> {latestSubmission.approval_status}</div>
-                        {(() => {
-                            const isAssignedToRequirement = Boolean(
-                                requirementDetail?.assignments?.some((assignment) =>
-                                    assignment.assigned_to_user_id === currentUserId
-                                )
-                            );
-                            const canViewSubmissionFiles = Boolean(
-                                isAdmin
-                                || latestSubmission.uploaded_by_user_id === currentUserId
-                                || (latestSubmission.approval_status === 'APPROVED' && isAssignedToRequirement)
-                            );
-                            if (!canViewSubmissionFiles) {
-                                return null;
-                            }
-                            return (
-                                <div className="dashboard-latest-upload-actions">
-                                    <Button
-                                        type="primary"
-                                        onClick={() => {
-                                            const fileId = latestSubmission.files?.[0]?.id;
-                                            const file = latestSubmission.files?.[0];
-                                            if (fileId) {
-                                                handleViewFile(latestSubmission.id, fileId, file);
-                                            }
-                                        }}
-                                    >
-                                        Open file
-                                    </Button>
-                                </div>
-                            );
-                        })()}
+                ) : approvedSubmissions.length ? (
+                    <div className="dashboard-submissions-modal">
+                        <div className="dashboard-submissions-header">
+                            <Text strong>{requirementDetail?.requirement}</Text>
+                            <Text type="secondary">
+                                {requirementDetail?.req_id || `REQ-${requirementDetail?.id}`}
+                            </Text>
+                        </div>
+                        <List
+                            dataSource={approvedSubmissions}
+                            renderItem={(submission: any) => {
+                                const uploaderName = submission.uploader?.employee_name
+                                    || submission.uploader_email
+                                    || submission.assignment?.user?.employee_name
+                                    || 'Unknown';
+                                const uploadedFor = submission.assignment?.user?.employee_name;
+                                const showUploadedFor = Boolean(
+                                    uploadedFor
+                                    && submission.assignment?.assigned_to_user_id
+                                    && submission.assignment.assigned_to_user_id !== submission.uploaded_by_user_id
+                                );
+
+                                return (
+                                    <List.Item className="dashboard-submission-item">
+                                        <div className="dashboard-submission-card">
+                                            <div className="dashboard-submission-main">
+                                                <div className="dashboard-submission-title-row">
+                                                    <Text strong>{submission.submission_id}</Text>
+                                                    <Tag color="success">APPROVED</Tag>
+                                                </div>
+                                                <div className="dashboard-submission-meta">
+                                                    <span><Text strong>Uploader:</Text> {uploaderName}</span>
+                                                    {showUploadedFor ? (
+                                                        <span><Text strong>Uploaded For:</Text> {uploadedFor}</span>
+                                                    ) : null}
+                                                    <span><Text strong>Deadline Submitted For:</Text> {formatDateOnly(submission.deadline_at_upload)}</span>
+                                                    <span><Text strong>Date Submitted:</Text> {formatDateTime(submission.upload_date)}</span>
+                                                </div>
+                                            </div>
+                                            {submission.files?.length ? (
+                                                <div className="dashboard-submission-files">
+                                                    {submission.files.map((file: any) => (
+                                                        <Button
+                                                            key={file.id}
+                                                            type="link"
+                                                            icon={<EyeOutlined />}
+                                                            onClick={() => handleViewFile(submission.id, file.id, file)}
+                                                        >
+                                                            {file.original_file_name || file.doc_file?.split('/').pop() || `File ${file.id}`}
+                                                        </Button>
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <Text type="secondary">No files attached.</Text>
+                                            )}
+                                        </div>
+                                    </List.Item>
+                                );
+                            }}
+                        />
                     </div>
                 ) : (
-                    <Empty description="No submissions found" />
+                    <Empty description="No approved submissions found" />
                 )}
             </Modal>
         </div>

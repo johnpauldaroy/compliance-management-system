@@ -78,10 +78,19 @@ class AuditLogObserver
         $map = [
             'User' => 'UPDATE_PROFILE',
             'Agency' => 'UPDATE_AGENCY',
-            'Requirement' => 'UPDATE_REQUIREMENT',
+            'Requirement' => $this->requirementAction($model),
             'Upload' => 'UPDATE_UPLOAD',
         ];
 
         return $map[$class] ?? 'UPDATED';
+    }
+
+    private function requirementAction(Model $model): string
+    {
+        if ($model->wasChanged('deactivated_at')) {
+            return $model->deactivated_at ? 'DEACTIVATE_REQUIREMENT' : 'REACTIVATE_REQUIREMENT';
+        }
+
+        return 'UPDATE_REQUIREMENT';
     }
 }

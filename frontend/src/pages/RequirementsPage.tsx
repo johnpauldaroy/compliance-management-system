@@ -1,5 +1,5 @@
 import { Table, Button, Tag, Drawer, Form, Input, Select, Space, message, Typography, Row, Col, Upload, Tooltip, Descriptions, Modal, Collapse, DatePicker, Switch, Empty } from 'antd';
-import { PlusOutlined, InfoCircleOutlined, EditOutlined, DeleteOutlined, UploadOutlined, ReloadOutlined, ArrowUpOutlined, ArrowDownOutlined, EyeOutlined } from '@ant-design/icons';
+import { PlusOutlined, InfoCircleOutlined, EditOutlined, UploadOutlined, ReloadOutlined, ArrowUpOutlined, ArrowDownOutlined, EyeOutlined, StopOutlined, CheckCircleOutlined } from '@ant-design/icons';
 import { keepPreviousData, useMutation, useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import dayjs from 'dayjs';
@@ -182,6 +182,7 @@ const RequirementsPage = () => {
     const [selectedRequirement, setSelectedRequirement] = useState<Requirement | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState<'all' | 'na' | 'pending' | 'complied' | 'overdue'>('all');
+    const [activeFilter, setActiveFilter] = useState<'active' | 'inactive' | 'all'>('active');
     const [sortField, setSortField] = useState<'id' | 'req_id' | 'requirement'>('id');
     const [sortOrder, setSortOrder] = useState<SortOrder>('ascend');
 
@@ -215,12 +216,13 @@ const RequirementsPage = () => {
         status ?? 'N/A';
 
     const { data: requirementsResponse, isLoading, isFetching, refetch, error: requirementsError } = useQuery<PaginatedResponse<Requirement>>({
-        queryKey: ['requirements', currentPage, pageSize, searchTerm, statusFilter, sortField, sortOrder],
+        queryKey: ['requirements', currentPage, pageSize, searchTerm, statusFilter, activeFilter, sortField, sortOrder],
         queryFn: () => requirementService.getAll({
             page: currentPage,
             per_page: pageSize,
             search: searchTerm.trim() || undefined,
             status: statusFilter === 'all' ? undefined : statusFilter,
+            active_status: activeFilter,
             sort_by: sortField,
             sort_dir: sortOrder === 'descend' ? 'desc' : 'asc',
         }),
@@ -401,14 +403,25 @@ const RequirementsPage = () => {
         },
     });
 
-    const deleteRequirement = useMutation({
-        mutationFn: (id: number) => requirementService.delete(id),
+    const deactivateRequirement = useMutation({
+        mutationFn: (id: number) => requirementService.deactivate(id),
         onSuccess: () => {
-            message.success('Requirement deleted.');
+            message.success('Requirement deactivated.');
             refetch();
         },
         onError: (error: any) => {
-            message.error(error.response?.data?.message || 'Failed to delete requirement.');
+            message.error(error.response?.data?.message || 'Failed to deactivate requirement.');
+        },
+    });
+
+    const reactivateRequirement = useMutation({
+        mutationFn: (id: number) => requirementService.reactivate(id),
+        onSuccess: () => {
+            message.success('Requirement reactivated.');
+            refetch();
+        },
+        onError: (error: any) => {
+            message.error(error.response?.data?.message || 'Failed to reactivate requirement.');
         },
     });
 
@@ -514,13 +527,22 @@ const RequirementsPage = () => {
         createRequirement.mutate(payload);
     };
 
-    const handleDelete = (record: Requirement) => {
+    const handleDeactivate = (record: Requirement) => {
         Modal.confirm({
-            title: `Delete ${record.req_id}?`,
-            content: 'This action cannot be undone.',
-            okText: 'Delete',
+            title: `Deactivate ${record.req_id}?`,
+            content: 'This will stop uploads, reminders, deadline notifications, and dashboard activity for this requirement.',
+            okText: 'Deactivate',
             okType: 'danger',
-            onOk: () => deleteRequirement.mutate(record.id),
+            onOk: () => deactivateRequirement.mutate(record.id),
+        });
+    };
+
+    const handleReactivate = (record: Requirement) => {
+        Modal.confirm({
+            title: `Reactivate ${record.req_id}?`,
+            content: 'This will make the requirement operational again. Reactivation does not send assignment emails.',
+            okText: 'Reactivate',
+            onOk: () => reactivateRequirement.mutate(record.id),
         });
     };
 
@@ -568,9 +590,19 @@ const RequirementsPage = () => {
             width: 160,
         },
         {
+            title: 'State',
+            key: 'active_state',
+            width: 110,
+            render: (_, record) => (
+                <Tag color={record.is_active === false ? 'default' : 'success'}>
+                    {record.is_active === false ? 'Inactive' : 'Active'}
+                </Tag>
+            ),
+        },
+        {
             title: 'Actions',
             key: 'actions',
-            width: 200,
+            width: 230,
             render: (_, record) => (
                 <Space wrap>
                     <Tooltip title="Details">
@@ -592,15 +624,26 @@ const RequirementsPage = () => {
                             onClick={() => handleEdit(record)}
                         />
                     </Tooltip>
-                    <Tooltip title="Delete">
-                        <Button
-                            type="text"
-                            danger
-                            icon={<DeleteOutlined />}
-                            className="requirements-action requirements-action--danger"
-                            onClick={() => handleDelete(record)}
-                        />
-                    </Tooltip>
+                    {record.is_active === false ? (
+                        <Tooltip title="Reactivate">
+                            <Button
+                                type="text"
+                                icon={<CheckCircleOutlined />}
+                                className="requirements-action requirements-action--info"
+                                onClick={() => handleReactivate(record)}
+                            />
+                        </Tooltip>
+                    ) : (
+                        <Tooltip title="Deactivate">
+                            <Button
+                                type="text"
+                                danger
+                                icon={<StopOutlined />}
+                                className="requirements-action requirements-action--danger"
+                                onClick={() => handleDeactivate(record)}
+                            />
+                        </Tooltip>
+                    )}
                 </Space>
             ),
         },
@@ -674,7 +717,7 @@ const RequirementsPage = () => {
 
     useEffect(() => {
         setCurrentPage(1);
-    }, [searchTerm, statusFilter]);
+    }, [searchTerm, statusFilter, activeFilter]);
 
     return (
         <div className="requirements-page">
@@ -698,6 +741,16 @@ const RequirementsPage = () => {
                         { label: 'Pending', value: 'pending' },
                         { label: 'Complied', value: 'complied' },
                         { label: 'Overdue', value: 'overdue' },
+                    ]}
+                    className="requirements-filter"
+                />
+                <Select
+                    value={activeFilter}
+                    onChange={(value) => setActiveFilter(value)}
+                    options={[
+                        { label: 'Active', value: 'active' },
+                        { label: 'Inactive', value: 'inactive' },
+                        { label: 'All states', value: 'all' },
                     ]}
                     className="requirements-filter"
                 />
@@ -1205,6 +1258,11 @@ const RequirementsPage = () => {
                                     ? (detailData?.auto_deadline_enabled ? 'Enabled' : 'Disabled')
                                     : 'Disabled'}
                             </Descriptions.Item>
+                            <Descriptions.Item label="State">
+                                <Tag color={detailData?.is_active === false ? 'default' : 'success'}>
+                                    {detailData?.is_active === false ? 'Inactive' : 'Active'}
+                                </Tag>
+                            </Descriptions.Item>
                             <Descriptions.Item label="Overall Compliance Status" span={2}>
                                 <Tag color={
                                     detailData?.compliance_status?.includes('100%') ? 'green' :
@@ -1216,7 +1274,7 @@ const RequirementsPage = () => {
                         </Descriptions>
                         <div style={{ marginTop: 24 }}>
                             <Typography.Title level={5}>Uploads</Typography.Title>
-                            {isAdmin ? (
+                            {isAdmin && detailData?.is_active !== false ? (
                                 <Button
                                     type="primary"
                                     icon={<UploadOutlined />}

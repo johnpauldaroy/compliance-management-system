@@ -1,4 +1,4 @@
-import { List, Card, Button, Tag, Space, Typography, Drawer, Descriptions, Upload, message, Modal, Form, Input, Select, Collapse, Tooltip, DatePicker, Empty } from 'antd';
+import { List, Card, Button, Tag, Space, Typography, Drawer, Descriptions, Upload, message, Modal, Form, Input, Select, Collapse, Tooltip, DatePicker, Empty, Tabs } from 'antd';
 import { UploadOutlined, ClockCircleOutlined, FileTextOutlined, EyeOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
@@ -94,9 +94,14 @@ const MyRequirementsPage = () => {
     const [filesModalOpen, setFilesModalOpen] = useState(false);
     const [activeFiles, setActiveFiles] = useState<UploadFileRecord[]>([]);
     const [activeSubmissionId, setActiveSubmissionId] = useState<number | null>(null);
+    const [isHistoryDetail, setIsHistoryDetail] = useState(false);
     const { data: requirements, isLoading, error: requirementsError } = useQuery<Requirement[]>({
         queryKey: ['my-requirements'],
         queryFn: () => requirementService.getMine(),
+    });
+    const { data: historyRequirements, isLoading: isHistoryLoading, error: historyError } = useQuery<Requirement[]>({
+        queryKey: ['my-requirements-history'],
+        queryFn: () => requirementService.getMineHistory(),
     });
 
     const { data: meData } = useQuery<MeResponse>({
@@ -107,7 +112,7 @@ const MyRequirementsPage = () => {
     const { data: detailData, isLoading: isDetailLoading, error: detailError, refetch: refetchDetails } = useQuery<Requirement>({
         queryKey: ['my-requirement-detail', detailId],
         queryFn: () => requirementService.show(detailId as number),
-        enabled: Boolean(detailId),
+        enabled: Boolean(detailId) && !isHistoryDetail,
     });
     useEffect(() => {
         if (!requirementsError) {
@@ -116,6 +121,14 @@ const MyRequirementsPage = () => {
         const error = requirementsError as { response?: { data?: { message?: string } } };
         message.error(error.response?.data?.message || 'Failed to load requirements.');
     }, [requirementsError]);
+
+    useEffect(() => {
+        if (!historyError) {
+            return;
+        }
+        const error = historyError as { response?: { data?: { message?: string } } };
+        message.error(error.response?.data?.message || 'Failed to load requirement history.');
+    }, [historyError]);
 
     useEffect(() => {
         if (!detailError || !detailId) {
@@ -248,55 +261,74 @@ const MyRequirementsPage = () => {
         return assignments.find((assignment) => assignment.assigned_to_user_id === userId) || null;
     };
 
+    const renderRequirementList = (items: Requirement[] | undefined, loading: boolean, history: boolean) => (
+        <List<Requirement>
+            grid={{ gutter: 16, column: 1 }}
+            dataSource={items ?? []}
+            loading={loading}
+            locale={{ emptyText: history ? 'No historical requirements found.' : 'No active requirements found.' }}
+            renderItem={(item) => (
+                <List.Item>
+                    <Card>
+                        <div className="myreq-card">
+                            <div className="myreq-info">
+                                <div className="myreq-icon">
+                                    <FileTextOutlined />
+                                </div>
+                                <div>
+                                    <Text strong className="myreq-name">
+                                        {item.requirement}
+                                    </Text>
+                                    <Text type="secondary" className="myreq-subtitle">
+                                        {item.agency?.name}
+                                    </Text>
+                                    <div className="myreq-deadline">
+                                        <ClockCircleOutlined className="myreq-deadline-icon" />
+                                        {history ? 'Last deadline: ' : 'Deadline: '}{formatPhDate(item.deadline)}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <Space size="large">
+                                <Tag color={history ? 'default' : getStatusColor(getComplianceDisplay(item.compliance_status))}>
+                                    {history ? 'History' : getComplianceDisplay(item.compliance_status)}
+                                </Tag>
+                                <Space>
+                                    <Button
+                                        onClick={() => {
+                                            setIsHistoryDetail(history);
+                                            setSelectedRequirement(item);
+                                            setDetailId(item.id);
+                                        }}
+                                    >
+                                        Details
+                                    </Button>
+                                </Space>
+                            </Space>
+                        </div>
+                    </Card>
+                </List.Item>
+            )}
+        />
+    );
+
     return (
         <div className="myreq-page">
             <Title level={2} className="myreq-title">My Compliance Requirements</Title>
 
-            <List<Requirement>
-                grid={{ gutter: 16, column: 1 }}
-                dataSource={requirements ?? []}
-                loading={isLoading}
-                renderItem={(item) => (
-                    <List.Item>
-                        <Card>
-                            <div className="myreq-card">
-                                <div className="myreq-info">
-                                    <div className="myreq-icon">
-                                        <FileTextOutlined />
-                                    </div>
-                                    <div>
-                                        <Text strong className="myreq-name">
-                                            {item.requirement}
-                                        </Text>
-                                        <Text type="secondary" className="myreq-subtitle">
-                                            {item.agency?.name}
-                                        </Text>
-                                        <div className="myreq-deadline">
-                                    <ClockCircleOutlined className="myreq-deadline-icon" />
-                                    Deadline: {formatPhDate(item.deadline)}
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <Space size="large">
-                                    <Tag color={getStatusColor(getComplianceDisplay(item.compliance_status))}>
-                                        {getComplianceDisplay(item.compliance_status)}
-                                    </Tag>
-                                    <Space>
-                                        <Button
-                                            onClick={() => {
-                                                setSelectedRequirement(item);
-                                                setDetailId(item.id);
-                                            }}
-                                        >
-                                            Details
-                                        </Button>
-                                    </Space>
-                                </Space>
-                            </div>
-                        </Card>
-                    </List.Item>
-                )}
+            <Tabs
+                items={[
+                    {
+                        key: 'active',
+                        label: 'Active',
+                        children: renderRequirementList(requirements, isLoading, false),
+                    },
+                    {
+                        key: 'history',
+                        label: 'History',
+                        children: renderRequirementList(historyRequirements, isHistoryLoading, true),
+                    },
+                ]}
             />
             <Drawer
                 title="Requirement Details"
@@ -304,6 +336,7 @@ const MyRequirementsPage = () => {
                 onClose={() => {
                     setDetailId(null);
                     setSelectedRequirement(null);
+                    setIsHistoryDetail(false);
                 }}
                 width={840}
                 destroyOnClose
@@ -461,6 +494,8 @@ const MyRequirementsPage = () => {
                                     );
                                     const uploadTooltip = !isAdmin && !deadlineKey
                                         ? 'Set a deadline to enable uploads.'
+                                        : isHistoryDetail
+                                            ? 'This is a historical requirement record.'
                                         : !isAdmin && pendingForDeadline
                                             ? 'You have a pending submission. We will inform you of the approval or rejection via email.'
                                             : !isAdmin && !isActiveForUser && approvedForDeadline
@@ -470,10 +505,14 @@ const MyRequirementsPage = () => {
                                                     : !isAdmin && approvedForDeadline
                                                         ? 'You have already complied with this requirement.'
                                                         : '';
-                                    const uploadDisabled = !isAdmin && (!deadlineKey || approvedForDeadline || pendingForDeadline || !isActiveForUser);
+                                    const uploadDisabled = isHistoryDetail || (!isAdmin && (!deadlineKey || approvedForDeadline || pendingForDeadline || !isActiveForUser));
                                     return (
                                         <>
-                                            {uploadDisabled ? (
+                                            {isHistoryDetail ? (
+                                                <Text type="secondary" className="myreq-history-note">
+                                                    This record is read-only because you are no longer assigned to this requirement.
+                                                </Text>
+                                            ) : uploadDisabled ? (
                                                 <Tooltip title={uploadTooltip} placement="top">
                                                     <Button
                                                         type="primary"

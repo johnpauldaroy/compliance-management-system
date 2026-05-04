@@ -21,15 +21,22 @@ class UploadSubmissionService
     public function createSubmission(Request $request, User $user, array $files): UploadSubmission
     {
         $requirement = Requirement::findOrFail($request->requirement_id);
+        if (!$requirement->isActive()) {
+            throw new HttpResponseException(
+                response()->json(['message' => 'Uploads are disabled for deactivated requirements.'], 422)
+            );
+        }
 
         $isAdmin = $user->hasAnyRole(['Compliance & Admin Specialist', 'Super Admin']);
 
         $assignment = RequirementAssignment::where('requirement_id', $requirement->id)
+            ->active()
             ->where('assigned_to_user_id', $user->id)
             ->first();
 
         if ($isAdmin && $request->filled('assignment_id')) {
             $assignment = RequirementAssignment::where('requirement_id', $requirement->id)
+                ->active()
                 ->where('id', $request->assignment_id)
                 ->first();
             if (!$assignment) {
@@ -197,6 +204,8 @@ class UploadSubmissionService
 
     public function approveSubmission(UploadSubmission $submission, ?string $remarks): UploadSubmission
     {
+        $this->ensureSubmissionRequirementActive($submission);
+
         return DB::transaction(function () use ($submission, $remarks) {
             $submission->update([
                 'approval_status' => 'APPROVED',
@@ -231,6 +240,8 @@ class UploadSubmissionService
 
     public function rejectSubmission(UploadSubmission $submission, string $remarks): UploadSubmission
     {
+        $this->ensureSubmissionRequirementActive($submission);
+
         return DB::transaction(function () use ($submission, $remarks) {
             $submission->update([
                 'approval_status' => 'REJECTED',
@@ -260,6 +271,11 @@ class UploadSubmissionService
 
     private function notifySpecialistsPendingReview(UploadSubmission $submission): void
     {
+        $submission->loadMissing(['requirement']);
+        if (!$submission->requirement?->isActive()) {
+            return;
+        }
+
         $specialistEmails = User::role(['Compliance & Admin Specialist', 'Super Admin'])
             ->pluck('email')
             ->filter()
@@ -285,6 +301,9 @@ class UploadSubmissionService
     private function notifySubmissionStatus(UploadSubmission $submission): void
     {
         $submission->loadMissing(['uploader', 'assignment.user', 'requirement']);
+        if (!$submission->requirement?->isActive()) {
+            return;
+        }
 
         $recipientEmail = $submission->uploader?->email
             ?? $submission->assignment?->user?->email
@@ -325,7 +344,7 @@ class UploadSubmissionService
     {
         $currentAssignment->loadMissing(['requirement']);
         $requirement = $currentAssignment->requirement;
-        if (!$requirement || !$this->isSequentialRequirement($requirement)) {
+        if (!$requirement || !$requirement->isActive() || !$this->isSequentialRequirement($requirement)) {
             return;
         }
 
@@ -377,7 +396,7 @@ class UploadSubmissionService
     {
         $submission->loadMissing(['assignment.user', 'assignment.requirement', 'requirement', 'requirement.assignments.user']);
         $requirement = $submission->requirement;
-        if (!$requirement) {
+        if (!$requirement || !$requirement->isActive()) {
             return;
         }
         if (!$requirement->auto_deadline_enabled) {
@@ -487,7 +506,7 @@ class UploadSubmissionService
         $assignment->loadMissing(['requirement', 'user']);
         $requirement = $assignment->requirement;
 
-        if (!$requirement || !$this->isParallelRequirement($requirement)) {
+        if (!$requirement || !$requirement->isActive() || !$this->isParallelRequirement($requirement)) {
             return;
         }
 
@@ -562,5 +581,17 @@ class UploadSubmissionService
         }
 
         return $nextDeadlines;
+    }
+
+    private function ensureSubmissionRequirementActive(UploadSubmission $submission): void
+    {
+        $submission->loadMissing(['requirement']);
+        if ($submission->requirement?->isActive()) {
+            return;
+        }
+
+        throw new HttpResponseException(
+            response()->json(['message' => 'This submission belongs to a deactivated requirement.'], 422)
+        );
     }
 }

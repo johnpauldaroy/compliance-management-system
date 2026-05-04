@@ -55,6 +55,9 @@ export interface Requirement {
   deadline?: string;
   auto_deadline_enabled?: boolean;
   assignment_mode?: 'parallel' | 'sequential';
+  is_active?: boolean;
+  deactivated_at?: string | null;
+  deactivated_by_user_id?: number | null;
   compliance_status?: string;
   created_at: string;
   updated_at: string;
@@ -72,6 +75,9 @@ export interface RequirementAssignment {
   user?: User;
   deadline?: string;
   compliance_status: ComplianceStatus;
+  is_active?: boolean;
+  removed_at?: string | null;
+  removed_by_user_id?: number | null;
   last_submitted_at?: string;
   last_approved_at?: string;
   created_at: string;
@@ -148,4 +154,9 @@ export interface AuditLog {
   ip_address: string;
   user_agent: string;
   created_at: string;
+}
+
+export interface UserDetails {
+  user: User;
+  requirements: Requirement[];
 }

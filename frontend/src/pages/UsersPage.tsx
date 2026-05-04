@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Button, Form, Input, Modal, Select, Space, Switch, Table, Tag, Typography, message, Alert, Tooltip, Upload } from 'antd';
+import { Button, Collapse, Descriptions, Drawer, Empty, Form, Input, Modal, Select, Space, Switch, Table, Tag, Typography, message, Alert, Tooltip, Upload } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { CheckCircleOutlined, EditOutlined, KeyOutlined, ReloadOutlined, StopOutlined, UploadOutlined, DownloadOutlined } from '@ant-design/icons';
+import { CheckCircleOutlined, EditOutlined, InfoCircleOutlined, KeyOutlined, ReloadOutlined, StopOutlined, UploadOutlined, DownloadOutlined } from '@ant-design/icons';
 import { userService } from '../services/apiService';
 import { authService } from '../services/authService';
-import type { User } from '../types';
+import type { Requirement, UploadSubmission, User } from '../types';
 import './UsersPage.css';
 
 const { Title, Text } = Typography;
@@ -61,6 +61,8 @@ const UsersPage = () => {
     const [isImportOpen, setIsImportOpen] = useState(false);
     const [importFile, setImportFile] = useState<File | null>(null);
     const [isTemplateOpen, setIsTemplateOpen] = useState(false);
+    const [isDetailsOpen, setIsDetailsOpen] = useState(false);
+    const [detailsUser, setDetailsUser] = useState<User | null>(null);
 
     const { data, isLoading, isFetching, error, refetch } = useQuery({
         queryKey: ['users'],
@@ -68,6 +70,16 @@ const UsersPage = () => {
     });
 
     const users: User[] = data?.data || [];
+
+    const {
+        data: detailsData,
+        isLoading: isDetailsLoading,
+        error: detailsError,
+    } = useQuery({
+        queryKey: ['user-details', detailsUser?.id],
+        queryFn: () => userService.getDetails(detailsUser?.id as number),
+        enabled: isDetailsOpen && Boolean(detailsUser?.id),
+    });
 
     useEffect(() => {
         let isActive = true;
@@ -130,6 +142,43 @@ const UsersPage = () => {
         return canManageUserType(user.user_type);
     };
     const canResetPasswordFor = (user: User) => isSuperAdmin || (isSpecialist && isPicUser(user));
+
+    const formatDate = (value?: string | null) => {
+        if (!value) {
+            return 'N/A';
+        }
+        return new Date(value).toLocaleString();
+    };
+
+    const formatDateOnly = (value?: string | null) => {
+        if (!value) {
+            return 'N/A';
+        }
+        return new Date(value).toLocaleDateString();
+    };
+
+    const approvalColor = (status?: string) => {
+        if (status === 'APPROVED') {
+            return 'success';
+        }
+        if (status === 'REJECTED') {
+            return 'error';
+        }
+        return 'processing';
+    };
+
+    const complianceColor = (status?: string) => {
+        if (status === 'APPROVED' || status?.includes('100%')) {
+            return 'success';
+        }
+        if (status === 'OVERDUE' || status?.includes('Late')) {
+            return 'error';
+        }
+        if (status === 'SUBMITTED') {
+            return 'processing';
+        }
+        return 'default';
+    };
 
     const previewIdByType = useMemo<Record<string, string>>(() => {
         const prefixMap: Record<string, string> = {
@@ -286,6 +335,11 @@ const UsersPage = () => {
         setIsPasswordOpen(true);
     };
 
+    const handleViewDetails = (user: User) => {
+        setDetailsUser(user);
+        setIsDetailsOpen(true);
+    };
+
     const handleSubmit = (values: UserFormValues) => {
         if (!canManageUsers || !canManageUserType(values.user_type)) {
             message.error('You do not have permission to manage this user type.');
@@ -355,6 +409,14 @@ const UsersPage = () => {
             key: 'actions',
             render: (_, record) => (
                 <Space>
+                    <Tooltip title="Details">
+                        <Button
+                            icon={<InfoCircleOutlined />}
+                            className="users-action users-action--info"
+                            aria-label="View user details"
+                            onClick={() => handleViewDetails(record)}
+                        />
+                    </Tooltip>
                     <Tooltip title="Edit">
                         <Button
                             icon={<EditOutlined />}
@@ -388,7 +450,99 @@ const UsersPage = () => {
                 </Space>
             ),
         },
-    ]), [canManageTarget, canToggleActiveFor, handleEdit, handleResetPassword, handleToggleActive, isSuperAdmin, updateUser]);
+    ]), [canManageTarget, canToggleActiveFor, handleEdit, handleResetPassword, handleToggleActive, handleViewDetails, isSuperAdmin, updateUser]);
+
+    const requirementItems = useMemo(() => {
+        const requirements = (detailsData?.requirements || []) as Requirement[];
+        return requirements.map((requirement) => {
+            const assigned = requirement.assignments?.find((assignment) => assignment.assigned_to_user_id === detailsUser?.id);
+            const submissions = (requirement.submissions || []) as UploadSubmission[];
+            return {
+                key: String(requirement.id),
+                label: (
+                    <div className="users-detail-requirement-label">
+                        <span className="users-detail-requirement-title">
+                            {requirement.req_id} - {requirement.requirement}
+                        </span>
+                        <Space size={6} wrap>
+                            <Tag color={requirement.is_active === false ? 'default' : 'success'}>
+                                {requirement.is_active === false ? 'Inactive' : 'Active'}
+                            </Tag>
+                            {assigned?.compliance_status ? (
+                                <Tag color={complianceColor(assigned.compliance_status)}>
+                                    {assigned.compliance_status}
+                                </Tag>
+                            ) : null}
+                        </Space>
+                    </div>
+                ),
+                children: (
+                    <Space direction="vertical" size={14} className="users-detail-section">
+                        <Descriptions size="small" column={2} bordered>
+                            <Descriptions.Item label="Agency">
+                                {requirement.agency?.name || 'N/A'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Category">
+                                {requirement.category || 'N/A'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Frequency">
+                                {requirement.frequency || 'N/A'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Deadline">
+                                {formatDateOnly(assigned?.deadline || requirement.deadline)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Assignment Mode">
+                                {(requirement.assignment_mode || 'parallel').toUpperCase()}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Uploads">
+                                {submissions.length}
+                            </Descriptions.Item>
+                        </Descriptions>
+                        {submissions.length ? (
+                            <Table<UploadSubmission>
+                                size="small"
+                                pagination={false}
+                                rowKey="id"
+                                dataSource={submissions}
+                                columns={[
+                                    {
+                                        title: 'Submission ID',
+                                        dataIndex: 'submission_id',
+                                        key: 'submission_id',
+                                    },
+                                    {
+                                        title: 'Uploaded At',
+                                        dataIndex: 'upload_date',
+                                        key: 'upload_date',
+                                        render: (value) => formatDate(value),
+                                    },
+                                    {
+                                        title: 'Deadline',
+                                        dataIndex: 'deadline_at_upload',
+                                        key: 'deadline_at_upload',
+                                        render: (value) => formatDateOnly(value),
+                                    },
+                                    {
+                                        title: 'Status',
+                                        dataIndex: 'approval_status',
+                                        key: 'approval_status',
+                                        render: (value) => <Tag color={approvalColor(value)}>{value}</Tag>,
+                                    },
+                                    {
+                                        title: 'Files',
+                                        key: 'files',
+                                        render: (_, submission) => submission.files?.length || 0,
+                                    },
+                                ]}
+                            />
+                        ) : (
+                            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No uploads for this requirement." />
+                        )}
+                    </Space>
+                ),
+            };
+        });
+    }, [detailsData, detailsUser?.id]);
 
     return (
         <div className="users-page">
@@ -456,6 +610,49 @@ const UsersPage = () => {
                 rowKey="id"
                 loading={isLoading}
             />
+
+            <Drawer
+                title={detailsUser ? `User Details: ${detailsUser.employee_name}` : 'User Details'}
+                open={isDetailsOpen}
+                onClose={() => setIsDetailsOpen(false)}
+                width={900}
+                destroyOnClose
+            >
+                {detailsError ? (
+                    <Alert
+                        type="error"
+                        message="Unable to load user details"
+                        description={(detailsError as any)?.response?.data?.message || 'Please try again.'}
+                    />
+                ) : (
+                    <Space direction="vertical" size={16} className="users-detail-section">
+                        <Descriptions size="small" column={2} bordered>
+                            <Descriptions.Item label="User ID">
+                                {detailsData?.user?.user_id || detailsUser?.user_id || 'N/A'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Role">
+                                {detailsData?.user?.roles?.[0]?.name || detailsUser?.roles?.[0]?.name || 'N/A'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Email">
+                                {detailsData?.user?.email || detailsUser?.email || 'N/A'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Branch">
+                                {detailsData?.user?.branch || detailsUser?.branch || 'N/A'}
+                            </Descriptions.Item>
+                        </Descriptions>
+                        <Typography.Title level={5} className="users-detail-heading">
+                            Related Requirements
+                        </Typography.Title>
+                        {isDetailsLoading ? (
+                            <Table loading pagination={false} dataSource={[]} columns={[]} />
+                        ) : requirementItems.length ? (
+                            <Collapse items={requirementItems} />
+                        ) : (
+                            <Empty description="No related requirements found." />
+                        )}
+                    </Space>
+                )}
+            </Drawer>
 
             <Modal
                 title={editingUser ? 'Edit User' : 'Add User'}

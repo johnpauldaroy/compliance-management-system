@@ -23,11 +23,14 @@ class RequirementController extends Controller
         $perPage = (int) $request->query('per_page', 25);
         $perPage = $perPage > 0 ? min($perPage, 200) : 25;
         $today = Carbon::today()->toDateString();
+        $summary = $request->boolean('summary');
 
-        $query = Requirement::with([
+        $query = Requirement::with($summary ? [
             'agency',
             'assignments.user',
-            'assignments.submissions',
+        ] : [
+            'agency',
+            'assignments.user',
             'submissions' => function ($submissionQuery) {
                 $submissionQuery->select([
                     'id',
@@ -42,6 +45,13 @@ class RequirementController extends Controller
                 ]);
             },
         ]);
+
+        $activeStatus = strtolower((string) $request->query('active_status', 'active'));
+        if ($activeStatus === 'inactive') {
+            $query->inactive();
+        } elseif ($activeStatus !== 'all') {
+            $query->active();
+        }
 
         if ($request->filled('agency_id')) {
             $query->where('agency_id', $request->query('agency_id'));
@@ -113,8 +123,10 @@ class RequirementController extends Controller
         }
 
         $page = $query->paginate($perPage);
-        $page->getCollection()->each(function ($requirement) {
-            $requirement->compliance_status = $this->summarizeComplianceStatus($requirement);
+        $page->getCollection()->each(function ($requirement) use ($summary) {
+            $requirement->compliance_status = $summary
+                ? $this->summarizeStoredComplianceStatus($requirement)
+                : $this->summarizeComplianceStatus($requirement);
         });
 
         return response()->json($page);
@@ -125,7 +137,7 @@ class RequirementController extends Controller
         $user = Auth::user();
         $userId = $user->id;
 
-        $requirements = Requirement::with([
+        $requirements = Requirement::active()->with([
             'agency',
             'assignments' => function ($query) use ($user) {
                 $query->where('assigned_to_user_id', $user->id);
@@ -152,6 +164,50 @@ class RequirementController extends Controller
         return response()->json($requirements);
     }
 
+    public function myRequirementHistory()
+    {
+        $user = Auth::user();
+        $userId = $user->id;
+
+        $requirements = Requirement::with([
+            'agency',
+            'allAssignments' => function ($query) use ($userId) {
+                $query->where('assigned_to_user_id', $userId);
+            },
+            'allAssignments.user',
+            'submissions' => function ($query) use ($userId) {
+                $query->where(function ($submissionQuery) use ($userId) {
+                    $submissionQuery->where('uploaded_by_user_id', $userId)
+                        ->orWhereHas('assignment', function ($assignmentQuery) use ($userId) {
+                            $assignmentQuery->where('assigned_to_user_id', $userId);
+                        });
+                })->orderByDesc('upload_date');
+            },
+            'submissions.files',
+            'submissions.uploader',
+            'submissions.assignment.user',
+        ])->where(function ($query) use ($userId) {
+            $query->whereHas('allAssignments', function ($assignmentQuery) use ($userId) {
+                $assignmentQuery->removed()
+                    ->where('assigned_to_user_id', $userId);
+            })->orWhereHas('submissions', function ($submissionQuery) use ($userId) {
+                $submissionQuery->where('uploaded_by_user_id', $userId)
+                    ->orWhereHas('assignment', function ($assignmentQuery) use ($userId) {
+                        $assignmentQuery->where('assigned_to_user_id', $userId);
+                    });
+            });
+        })->whereDoesntHave('assignments', function ($assignmentQuery) use ($userId) {
+            $assignmentQuery->where('assigned_to_user_id', $userId);
+        })->orderBy('req_id')->get();
+
+        $requirements->each(function ($requirement) {
+            $requirement->setRelation('assignments', $requirement->allAssignments);
+            $requirement->compliance_status = 'HISTORY';
+        });
+
+        return response()->json($requirements);
+    }
+
     public function export(Request $request)
     {
         $this->authorize('viewAny', Requirement::class);
@@ -172,6 +228,13 @@ class RequirementController extends Controller
                 ]);
             },
         ]);
+
+        $activeStatus = strtolower((string) $request->query('active_status', 'active'));
+        if ($activeStatus === 'inactive') {
+            $query->inactive();
+        } elseif ($activeStatus !== 'all') {
+            $query->active();
+        }
 
         if ($request->filled('agency_id')) {
             $query->where('agency_id', $request->query('agency_id'));
@@ -411,18 +474,24 @@ class RequirementController extends Controller
                 // Remove assignments no longer in the list
                 $toRemove = array_diff($oldPicUserIds, $newPicUserIds);
                 if (!empty($toRemove)) {
-                    $hasUploadedAssignments = $requirement->assignments()
+                    $hasPendingAssignments = $requirement->assignments()
                         ->whereIn('assigned_to_user_id', $toRemove)
-                        ->whereHas('submissions')
+                        ->whereHas('submissions', function ($submissionQuery) {
+                            $submissionQuery->where('approval_status', 'PENDING');
+                        })
                         ->exists();
 
-                    if ($hasUploadedAssignments) {
+                    if ($hasPendingAssignments) {
                         throw ValidationException::withMessages([
-                            'person_in_charge_user_ids' => ['Cannot remove assigned person-in-charge with existing submissions.'],
+                            'person_in_charge_user_ids' => ['Cannot remove assigned person-in-charge with pending submissions for approval.'],
                         ]);
                     }
                 }
-                $requirement->assignments()->whereIn('assigned_to_user_id', $toRemove)->delete();
+                $requirement->assignments()->whereIn('assigned_to_user_id', $toRemove)->update([
+                    'removed_at' => now(),
+                    'removed_by_user_id' => Auth::id(),
+                    'sequence_order' => null,
+                ]);
             }
 
             $frequency = $validated['frequency'] ?? $requirement->frequency;
@@ -452,19 +521,15 @@ class RequirementController extends Controller
                 if (!empty($orderedPicUserIds)) {
                     $toAdd = array_diff($orderedPicUserIds, $requirement->assignments()->pluck('assigned_to_user_id')->toArray());
                     foreach ($toAdd as $userId) {
-                        $newAssignments[] = RequirementAssignment::create([
-                            'assignment_id' => 'ASGN-' . strtoupper(\Illuminate\Support\Str::random(10)),
-                            'requirement_id' => $requirement->id,
-                            'assigned_to_user_id' => $userId,
+                        $newAssignments[] = $this->createOrReactivateAssignment($requirement, (int) $userId, [
                             'sequence_order' => null,
                             'deadline' => $sequentialDeadlines[$userId] ?? null,
-                            'compliance_status' => 'PENDING',
                         ]);
                     }
                 }
 
                 foreach ($orderedPicUserIds as $index => $userId) {
-                    $assignment = RequirementAssignment::where('requirement_id', $requirement->id)
+                    $assignment = $requirement->assignments()
                         ->where('assigned_to_user_id', $userId)
                         ->first();
 
@@ -489,12 +554,8 @@ class RequirementController extends Controller
                 $existingUserIds = $requirement->assignments()->pluck('assigned_to_user_id')->toArray();
                 $toAdd = array_diff($orderedPicUserIds, $existingUserIds);
                 foreach ($toAdd as $userId) {
-                    $newAssignments[] = RequirementAssignment::create([
-                        'assignment_id' => 'ASGN-' . strtoupper(\Illuminate\Support\Str::random(10)),
-                        'requirement_id' => $requirement->id,
-                        'assigned_to_user_id' => $userId,
+                    $newAssignments[] = $this->createOrReactivateAssignment($requirement, (int) $userId, [
                         'deadline' => $validated['deadline'] ?? $requirement->deadline,
-                        'compliance_status' => 'PENDING',
                     ]);
                 }
 
@@ -559,8 +620,70 @@ class RequirementController extends Controller
     public function destroy(Requirement $requirement)
     {
         $this->authorize('delete', $requirement);
-        $requirement->delete();
-        return response()->noContent();
+        $this->deactivateRequirement($requirement);
+        return response()->json($requirement->fresh());
+    }
+
+    public function deactivate(Requirement $requirement)
+    {
+        $this->authorize('delete', $requirement);
+        $this->deactivateRequirement($requirement);
+        return response()->json($requirement->fresh());
+    }
+
+    public function reactivate(Requirement $requirement)
+    {
+        $this->authorize('update', $requirement);
+
+        if ($requirement->isActive()) {
+            return response()->json($requirement);
+        }
+
+        $requirement->update([
+            'deactivated_at' => null,
+            'deactivated_by_user_id' => null,
+        ]);
+
+        return response()->json($requirement->fresh());
+    }
+
+    private function deactivateRequirement(Requirement $requirement): void
+    {
+        if (!$requirement->isActive()) {
+            return;
+        }
+
+        $requirement->update([
+            'deactivated_at' => now(),
+            'deactivated_by_user_id' => Auth::id(),
+        ]);
+    }
+
+    private function createOrReactivateAssignment(Requirement $requirement, int $userId, array $overrides = []): RequirementAssignment
+    {
+        $assignment = $requirement->allAssignments()
+            ->where('assigned_to_user_id', $userId)
+            ->first();
+
+        $payload = array_merge([
+            'removed_at' => null,
+            'removed_by_user_id' => null,
+            'compliance_status' => 'PENDING',
+            'last_submitted_at' => null,
+            'last_approved_at' => null,
+        ], $overrides);
+
+        if ($assignment) {
+            $assignment->update($payload);
+            return $assignment->fresh(['user', 'requirement']);
+        }
+
+        return RequirementAssignment::create(array_merge([
+            'assignment_id' => 'ASGN-' . strtoupper(\Illuminate\Support\Str::random(10)),
+            'requirement_id' => $requirement->id,
+            'assigned_to_user_id' => $userId,
+            'compliance_status' => 'PENDING',
+        ], $overrides));
     }
 
     private function generateReqId(int $agencyId): string
@@ -735,6 +858,40 @@ class RequirementController extends Controller
 
         $percent = $total === 0 ? 0 : (int) round(100 * ($approved + $actuallySubmitted) / $total);
 
+        if ($statuses->contains('OVERDUE')) {
+            return 'Late (' . $percent . '%)';
+        }
+
+        return 'Pending (' . $percent . '%)';
+    }
+
+    private function summarizeStoredComplianceStatus(Requirement $requirement): string
+    {
+        if (!$requirement->deadline) {
+            return 'N/A';
+        }
+
+        $assignments = $requirement->assignments;
+        if ($assignments->isEmpty()) {
+            return 'No PIC assigned';
+        }
+
+        $total = $assignments->count();
+        $statuses = $assignments->map(function (RequirementAssignment $assignment) {
+            $status = strtoupper((string) ($assignment->compliance_status ?: 'PENDING'));
+            if (!in_array($status, ['APPROVED', 'SUBMITTED'], true) && $this->isPastDeadline($assignment->deadline)) {
+                return 'OVERDUE';
+            }
+            return $status;
+        });
+        $approved = $statuses->filter(fn (string $status) => $status === 'APPROVED')->count();
+        $submitted = $statuses->filter(fn (string $status) => $status === 'SUBMITTED')->count();
+
+        if ($approved === $total) {
+            return 'Complied (100%)';
+        }
+
+        $percent = (int) round(100 * ($approved + $submitted) / $total);
         if ($statuses->contains('OVERDUE')) {
             return 'Late (' . $percent . '%)';
         }
@@ -923,7 +1080,7 @@ class RequirementController extends Controller
         $grouped = collect($assignments)->groupBy('requirement_id');
         foreach ($grouped as $requirementId => $group) {
             $requirement = $group->first()?->requirement ?? Requirement::find($requirementId);
-            if (!$requirement) {
+            if (!$requirement || !$requirement->isActive()) {
                 continue;
             }
             if ($requirement && $requirement->isSequential()) {
@@ -943,6 +1100,9 @@ class RequirementController extends Controller
     private function sendDeadlineNotification(RequirementAssignment $assignment, string $context): void
     {
         $assignment->loadMissing(['user', 'requirement']);
+        if (!$assignment->requirement?->isActive()) {
+            return;
+        }
         if (!$assignment->deadline && $context !== 'assigned') {
             return;
         }

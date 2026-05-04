@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\AuditLog;
+use App\Models\Requirement;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -27,7 +28,6 @@ class UserController extends Controller
             $mappedUserType = $this->userTypeForRole($roleName);
             if ($mappedUserType && $user->user_type !== $mappedUserType) {
                 $user->user_type = $mappedUserType;
-                $user->save();
             }
         }
 
@@ -148,6 +148,48 @@ class UserController extends Controller
         ]);
 
         return response()->noContent();
+    }
+
+    public function details(User $user)
+    {
+        $this->authorize('view', $user);
+        if (!$this->isSuperAdmin() && !$this->isSpecialist()) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        if ($this->isSpecialist() && $this->isSuperAdminUser($user)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $requirements = Requirement::with([
+            'agency',
+            'allAssignments.user',
+            'submissions' => function ($query) use ($user) {
+                $query->where(function ($submissionQuery) use ($user) {
+                    $submissionQuery->where('uploaded_by_user_id', $user->id)
+                        ->orWhereHas('assignment', function ($assignmentQuery) use ($user) {
+                            $assignmentQuery->where('assigned_to_user_id', $user->id);
+                        });
+                })->with(['uploader', 'assignment.user', 'files'])
+                    ->orderByDesc('upload_date');
+            },
+        ])
+            ->where(function ($query) use ($user) {
+                $query->whereHas('allAssignments', function ($assignmentQuery) use ($user) {
+                    $assignmentQuery->where('assigned_to_user_id', $user->id);
+                })->orWhereRaw("CONCAT(';', person_in_charge_user_ids, ';') LIKE ?", ['%;' . $user->id . ';%']);
+            })
+            ->orderBy('req_id')
+            ->get();
+
+        $requirements->each(function ($requirement) {
+            $requirement->setRelation('assignments', $requirement->allAssignments);
+        });
+
+        return response()->json([
+            'user' => $user->load('roles'),
+            'requirements' => $requirements,
+        ]);
     }
 
     public function import(Request $request)

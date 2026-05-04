@@ -52,9 +52,10 @@ const ApprovalsPage = () => {
     const [filesModalOpen, setFilesModalOpen] = useState(false);
     const [activeFiles, setActiveFiles] = useState<any[]>([]);
     const [activeSubmissionId, setActiveSubmissionId] = useState<number | null>(null);
+    const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('pending');
     const { data: submissions, isLoading } = useQuery({
-        queryKey: ['submissions'],
-        queryFn: uploadService.getAll,
+        queryKey: ['submissions', statusFilter],
+        queryFn: () => uploadService.getAll({ status: statusFilter === 'all' ? undefined : statusFilter.toUpperCase() }),
     });
     const { data: meData } = useQuery({
         queryKey: ['me'],
@@ -108,8 +109,6 @@ const ApprovalsPage = () => {
             message.error(error.response?.data?.message || 'Failed to reject.');
         },
     });
-
-    const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('pending');
 
     const filteredUploads = (submissions || []).filter((submission: any) => {
         if (statusFilter === 'all') {

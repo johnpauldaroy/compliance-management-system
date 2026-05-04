@@ -18,12 +18,29 @@ class RequirementPolicy
             return true;
         }
 
+        if (!$requirement->isActive()) {
+            return false;
+        }
+
         $userId = $user->id;
         $hasAssignment = $requirement->assignments
             ? $requirement->assignments->where('assigned_to_user_id', $userId)->isNotEmpty()
             : $requirement->assignments()->where('assigned_to_user_id', $userId)->exists();
 
         if ($hasAssignment) {
+            return true;
+        }
+
+        $hasHistoricalSubmission = $requirement->submissions()
+            ->where(function ($query) use ($userId) {
+                $query->where('uploaded_by_user_id', $userId)
+                    ->orWhereHas('assignment', function ($assignmentQuery) use ($userId) {
+                        $assignmentQuery->where('assigned_to_user_id', $userId);
+                    });
+            })
+            ->exists();
+
+        if ($hasHistoricalSubmission) {
             return true;
         }
 

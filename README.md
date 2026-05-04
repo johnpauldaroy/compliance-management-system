@@ -83,6 +83,28 @@ To get the entire system up and running using Docker:
   docker compose logs scheduler --tail=100
   ```
 
+## Google Drive Backups
+
+The backend can create a daily backup at `00:00` into a local Google Drive Desktop sync folder. Set these values in `backend/.env`:
+
+```env
+GOOGLE_DRIVE_BACKUP_PATH="C:\Users\YourName\Google Drive\Compliance CMS Backups"
+GOOGLE_DRIVE_BACKUP_FOLDER_URL="https://drive.google.com/drive/folders/17oh2FcERhh6D_9v_paBYFkhfyjeugYA4?usp=sharing"
+GOOGLE_DRIVE_BACKUP_RETENTION_DAYS=30
+GOOGLE_DRIVE_BACKUP_INCLUDE_DATABASE=false
+GOOGLE_DRIVE_BACKUP_INCLUDE_FILES=true
+GOOGLE_DRIVE_BACKUP_APPROVED_ONLY=true
+```
+
+The backup copies only approved upload files into `files/{requirement_req_id}/{pic_user_id}/{deadline}/`. Google Drive Desktop then syncs that backup folder to the cloud. Set `GOOGLE_DRIVE_BACKUP_INCLUDE_DATABASE=true` only if you also want a full database dump, including non-approved records.
+
+Run a manual backup with:
+
+```bash
+cd backend
+php artisan backup:google-drive
+```
+
 ## Dokploy Deployment Notes
 
 Set these values in Dokploy before building:

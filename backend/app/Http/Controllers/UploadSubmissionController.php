@@ -52,12 +52,17 @@ class UploadSubmissionController extends Controller
         return response()->json($submission, 211);
     }
 
-    public function index()
+    public function index(Request $request)
     {
         $this->authorize('viewAny', UploadSubmission::class);
         $user = Auth::user();
         $query = UploadSubmission::with(['requirement.agency', 'uploader', 'assignment.user', 'files'])
+            ->whereHas('requirement', fn ($requirementQuery) => $requirementQuery->active())
             ->orderByDesc('upload_date');
+
+        if ($request->filled('status')) {
+            $query->where('approval_status', strtoupper((string) $request->query('status')));
+        }
 
         if (!$user->hasAnyRole(['Super Admin', 'Compliance & Admin Specialist'])) {
             $query->where('uploaded_by_user_id', $user->id);

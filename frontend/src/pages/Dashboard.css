@@ -645,14 +645,56 @@
     linear-gradient(135deg, #f6e2ff 0%, #cfe2ff 30%, #ffd7ea 55%, #fff6c2 100%);
 }
 
-.dashboard-latest-upload {
+.dashboard-submissions-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.dashboard-submissions-header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #edf0f6;
+}
+
+.dashboard-submission-item {
+  padding: 14px 0;
+}
+
+.dashboard-submission-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+}
+
+.dashboard-submission-main {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.dashboard-latest-upload-actions {
-  margin-top: 12px;
+.dashboard-submission-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.dashboard-submission-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 8px 16px;
+  color: #3b4255;
+}
+
+.dashboard-submission-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  padding-top: 2px;
 }
 
 .dashboard-stat .dashboard-stat-icon {

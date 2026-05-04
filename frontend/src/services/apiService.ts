@@ -1,5 +1,5 @@
 import api, { API_ROOT_URL } from '../lib/api';
-import type { Agency, BranchUnitDepartment, PaginatedResponse, Position, Requirement, UploadSubmission, User } from '../types';
+import type { Agency, BranchUnitDepartment, PaginatedResponse, Position, Requirement, UploadSubmission, User, UserDetails } from '../types';
 
 const getCookie = (name: string) => {
     const value = `; ${document.cookie}`;
@@ -86,10 +86,13 @@ export const requirementService = {
         category?: string;
         compliance_status?: string;
         status?: 'compliant' | 'complied' | 'pending' | 'overdue' | 'na';
+        active_status?: 'active' | 'inactive' | 'all';
+        summary?: boolean;
         sort_by?: 'id' | 'req_id' | 'requirement';
         sort_dir?: 'asc' | 'desc';
     }) => (await api.get<PaginatedResponse<Requirement>>('/requirements', { params })).data,
     getMine: async () => (await api.get<Requirement[]>('/requirements/my')).data,
+    getMineHistory: async () => (await api.get<Requirement[]>('/requirements/my/history')).data,
     exportCsv: async (params?: {
         search?: string;
         agency_id?: number;
@@ -106,10 +109,15 @@ export const requirementService = {
         await api.get('/sanctum/csrf-cookie', { baseURL: rootUrl });
         return (await api.put<Requirement>(`/requirements/${id}`, data, { headers: getCsrfHeaders() })).data;
     },
-    delete: async (id: number) => {
+    deactivate: async (id: number) => {
         const rootUrl = getRootUrl();
         await api.get('/sanctum/csrf-cookie', { baseURL: rootUrl });
-        return await api.delete(`/requirements/${id}`, { headers: getCsrfHeaders() });
+        return (await api.patch<Requirement>(`/requirements/${id}/deactivate`, undefined, { headers: getCsrfHeaders() })).data;
+    },
+    reactivate: async (id: number) => {
+        const rootUrl = getRootUrl();
+        await api.get('/sanctum/csrf-cookie', { baseURL: rootUrl });
+        return (await api.patch<Requirement>(`/requirements/${id}/reactivate`, undefined, { headers: getCsrfHeaders() })).data;
     },
     import: async (file: File) => {
         const rootUrl = getRootUrl();
@@ -136,7 +144,7 @@ export const uploadService = {
             },
         })).data;
     },
-    getAll: async () => (await api.get<UploadSubmission[]>('/submissions')).data,
+    getAll: async (params?: { status?: string }) => (await api.get<UploadSubmission[]>('/submissions', { params })).data,
     approve: async (id: number, remarks: string) => {
         const rootUrl = getRootUrl();
         await api.get('/sanctum/csrf-cookie', { baseURL: rootUrl });
@@ -173,7 +181,7 @@ export const dashboardService = {
         overdue: number;
         complied: number;
     }[]>('/dashboard/agency-stats')).data,
-    getCalendar: async () => (await api.get<Record<string, { id: number; name: string; status: 'pending' | 'complied' | 'overdue' | 'na' | 'for_approval'; pic?: string; }[]>>('/dashboard/calendar')).data,
+    getCalendar: async (params?: { month?: string }) => (await api.get<Record<string, { id: number; name: string; status: 'pending' | 'complied' | 'overdue' | 'na' | 'for_approval'; pic?: string; }[]>>('/dashboard/calendar', { params })).data,
 };
 
 export const auditService = {
@@ -196,6 +204,7 @@ export const profileService = {
 
 export const userService = {
     getAll: async () => (await api.get<any>('/users')).data,
+    getDetails: async (id: number) => (await api.get<UserDetails>(`/users/${id}/details`)).data,
     create: async (data: {
         employee_name: string;
         email: string;

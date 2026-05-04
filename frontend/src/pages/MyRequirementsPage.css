@@ -50,6 +50,11 @@
   margin-right: 4px;
 }
 
+.myreq-history-note {
+  display: block;
+  margin-bottom: 12px;
+}
+
 .view-files-btn {
   background: #e7f5ff;
   color: #1c7ed6 !important;

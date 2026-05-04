@@ -22,12 +22,17 @@ class SendComplianceReminders extends Command
             $targetDate = Carbon::today()->addDays($offset);
 
             $assignments = RequirementAssignment::with(['requirement', 'user'])
+                ->active()
+                ->whereHas('requirement', fn ($query) => $query->active())
                 ->whereDate('deadline', $targetDate)
                 ->where('compliance_status', '!=', 'APPROVED')
                 ->get();
 
             foreach ($assignments as $assignment) {
                 $requirement = $assignment->requirement;
+                if (!$requirement?->isActive()) {
+                    continue;
+                }
                 if ($requirement && $requirement->isSequential()) {
                     $active = $requirement->activeSequentialAssignment();
                     if (!$active || $active->id !== $assignment->id) {
@@ -57,12 +62,17 @@ class SendComplianceReminders extends Command
 
         $overdueDate = Carbon::today()->subDay();
         $overdueAssignments = RequirementAssignment::with(['requirement', 'user'])
+            ->active()
+            ->whereHas('requirement', fn ($query) => $query->active())
             ->whereDate('deadline', $overdueDate)
             ->where('compliance_status', '!=', 'APPROVED')
             ->get();
 
         foreach ($overdueAssignments as $assignment) {
             $requirement = $assignment->requirement;
+            if (!$requirement?->isActive()) {
+                continue;
+            }
             if ($requirement && $requirement->isSequential()) {
                 $active = $requirement->activeSequentialAssignment();
                 if (!$active || $active->id !== $assignment->id) {
