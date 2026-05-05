@@ -9,6 +9,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Schema;
 use App\Mail\RequirementDeadlineMail;
 use App\Models\RequirementAssignment;
 use Illuminate\Validation\ValidationException;
@@ -28,6 +29,20 @@ class RequirementController extends Controller
         $query = Requirement::with($summary ? [
             'agency',
             'assignments.user',
+            'submissions' => function ($submissionQuery) {
+                $submissionQuery->select([
+                    'id',
+                    'requirement_id',
+                    'assignment_id',
+                    'uploaded_by_user_id',
+                    'uploader_email',
+                    'upload_date',
+                    'deadline_at_upload',
+                    'approval_status',
+                    'status_change_on',
+                    'created_at',
+                ]);
+            },
         ] : [
             'agency',
             'assignments.user',
@@ -37,6 +52,7 @@ class RequirementController extends Controller
                     'requirement_id',
                     'assignment_id',
                     'uploaded_by_user_id',
+                    'uploader_email',
                     'upload_date',
                     'deadline_at_upload',
                     'approval_status',
@@ -119,10 +135,9 @@ class RequirementController extends Controller
         }
 
         $page = $query->paginate($perPage);
-        $page->getCollection()->each(function ($requirement) use ($summary) {
-            $requirement->compliance_status = $summary
-                ? $this->summarizeStoredComplianceStatus($requirement)
-                : $this->summarizeComplianceStatus($requirement);
+        $page->getCollection()->each(function ($requirement) {
+            $this->applyComputedAssignmentStatuses($requirement);
+            $requirement->compliance_status = $this->summarizeComplianceStatus($requirement);
         });
 
         return response()->json($page);
@@ -483,11 +498,7 @@ class RequirementController extends Controller
                         ]);
                     }
                 }
-                $requirement->assignments()->whereIn('assigned_to_user_id', $toRemove)->update([
-                    'removed_at' => now(),
-                    'removed_by_user_id' => Auth::id(),
-                    'sequence_order' => null,
-                ]);
+                $this->removeAssignmentsForPicIds($requirement, $toRemove);
             }
 
             $frequency = $validated['frequency'] ?? $requirement->frequency;
@@ -661,13 +672,7 @@ class RequirementController extends Controller
             ->where('assigned_to_user_id', $userId)
             ->first();
 
-        $payload = array_merge([
-            'removed_at' => null,
-            'removed_by_user_id' => null,
-            'compliance_status' => 'PENDING',
-            'last_submitted_at' => null,
-            'last_approved_at' => null,
-        ], $overrides);
+        $payload = $this->assignmentResetPayload($overrides);
 
         if ($assignment) {
             $assignment->update($payload);
@@ -680,6 +685,68 @@ class RequirementController extends Controller
             'assigned_to_user_id' => $userId,
             'compliance_status' => 'PENDING',
         ], $overrides));
+    }
+
+    private function removeAssignmentsForPicIds(Requirement $requirement, array $picUserIds): void
+    {
+        if (empty($picUserIds)) {
+            return;
+        }
+
+        if (Schema::hasColumn('requirement_assignments', 'removed_at')) {
+            $payload = ['removed_at' => now()];
+
+            if (Schema::hasColumn('requirement_assignments', 'removed_by_user_id')) {
+                $payload['removed_by_user_id'] = Auth::id();
+            }
+
+            if (Schema::hasColumn('requirement_assignments', 'sequence_order')) {
+                $payload['sequence_order'] = null;
+            }
+
+            $requirement->assignments()
+                ->whereIn('assigned_to_user_id', $picUserIds)
+                ->update($payload);
+
+            return;
+        }
+
+        $removableQuery = $requirement->assignments()
+            ->whereIn('assigned_to_user_id', $picUserIds)
+            ->whereDoesntHave('submissions')
+            ->whereDoesntHave('uploads');
+
+        $removableCount = (clone $removableQuery)->count();
+        $targetCount = $requirement->assignments()
+            ->whereIn('assigned_to_user_id', $picUserIds)
+            ->count();
+
+        if ($removableCount !== $targetCount) {
+            throw ValidationException::withMessages([
+                'person_in_charge_user_ids' => ['Cannot remove assigned person-in-charge with submission history until assignment removal fields are migrated.'],
+            ]);
+        }
+
+        $removableQuery->delete();
+    }
+
+    private function assignmentResetPayload(array $overrides = []): array
+    {
+        $payload = [
+            'compliance_status' => 'PENDING',
+            'last_submitted_at' => null,
+            'last_approved_at' => null,
+        ];
+
+        if (Schema::hasColumn('requirement_assignments', 'removed_at')) {
+            $payload['removed_at'] = null;
+        }
+
+        if (Schema::hasColumn('requirement_assignments', 'removed_by_user_id')) {
+            $payload['removed_by_user_id'] = null;
+        }
+
+        return array_merge($payload, $overrides);
     }
 
     private function generateReqId(int $agencyId): string

@@ -14,40 +14,16 @@ class DashboardController extends Controller
 {
     public function stats()
     {
-        $totalRequirements = Requirement::active()->count();
+        $requirements = Requirement::active()
+            ->with(['assignments', 'submissions'])
+            ->get();
+
+        $totalRequirements = $requirements->count();
         $totalAgencies = Agency::count();
-        $today = Carbon::today()->toDateString();
-
-        $compliantCount = Requirement::active()
-            ->whereNotNull('deadline')
-            ->whereHas('assignments')
-            ->whereDoesntHave('assignments', function ($query) {
-                $query->where('compliance_status', '!=', 'APPROVED');
-            })
-            ->count();
-
-        $overdueCount = Requirement::active()
-            ->whereNotNull('deadline')
-            ->whereHas('assignments', function ($query) use ($today) {
-                $query->whereNotNull('deadline')
-                    ->whereDate('deadline', '<', $today)
-                    ->whereNotIn('compliance_status', ['APPROVED', 'SUBMITTED']);
-            })->count();
-
-        $pendingCount = Requirement::active()
-            ->whereNotNull('deadline')
-            ->where(function ($query) use ($today) {
-                $query->whereDoesntHave('assignments')
-                    ->orWhere(function ($subQuery) use ($today) {
-                        $subQuery->whereHas('assignments', function ($assignmentQuery) {
-                            $assignmentQuery->where('compliance_status', '!=', 'APPROVED');
-                        })->whereDoesntHave('assignments', function ($assignmentQuery) use ($today) {
-                            $assignmentQuery->whereNotNull('deadline')
-                                ->whereDate('deadline', '<', $today)
-                                ->whereNotIn('compliance_status', ['APPROVED', 'SUBMITTED']);
-                        });
-                    });
-            })->count();
+        $statuses = $requirements->map(fn ($requirement) => $this->summarizeRequirementStatus($requirement));
+        $compliantCount = $statuses->filter(fn (string $status) => $status === 'complied')->count();
+        $overdueCount = $statuses->filter(fn (string $status) => $status === 'overdue')->count();
+        $pendingCount = $statuses->filter(fn (string $status) => $status === 'pending')->count();
 
         $forApprovalCount = UploadSubmission::where('approval_status', 'PENDING')
             ->whereHas('requirement', fn ($query) => $query->active())
@@ -87,6 +63,7 @@ class DashboardController extends Controller
         $stats = \App\Models\Agency::with([
             'requirements' => fn ($query) => $query->active(),
             'requirements.assignments',
+            'requirements.submissions',
         ])
             ->get()
             ->map(function ($agency) use ($isPic, $userId) {
@@ -289,14 +266,16 @@ class DashboardController extends Controller
             return 'pending';
         }
 
-        $hasOverdue = $assignments->contains(fn ($assignment) => $this->resolveCalendarAssignmentState($assignment->compliance_status, $assignment->deadline) === 'overdue');
-        if ($hasOverdue) {
-            return 'overdue';
-        }
+        $deadlineKey = Carbon::parse($requirement->deadline)->toDateString();
+        $statuses = $assignments->map(fn ($assignment) => $this->resolveAssignmentStateForDeadline($requirement, $assignment, $deadlineKey));
 
-        $allApproved = $assignments->where('compliance_status', 'APPROVED')->count() === $assignments->count();
+        $allApproved = $statuses->filter(fn (string $status) => $status === 'complied')->count() === $assignments->count();
         if ($allApproved) {
             return 'complied';
+        }
+
+        if ($statuses->contains('overdue')) {
+            return 'overdue';
         }
 
         return 'pending';
@@ -309,23 +288,24 @@ class DashboardController extends Controller
         }
 
         $deadlineKey = Carbon::parse($requirement->deadline)->toDateString();
-        $submissions = $this->filterSubmissionsByDeadline($requirement->submissions, $deadlineKey);
-        if ($submissions->where('approval_status', 'PENDING')->count() > 0) {
-            return 'for_approval';
-        }
-
         $assignments = $requirement->assignments;
         if ($assignments->isEmpty()) {
             return 'pending';
         }
 
-        if ($assignments->contains(fn ($assignment) => $this->resolveCalendarAssignmentState($assignment->compliance_status, $assignment->deadline) === 'overdue')) {
-            return 'overdue';
+        $statuses = $assignments->map(fn ($assignment) => $this->resolveAssignmentStateForDeadline($requirement, $assignment, $deadlineKey));
+
+        if ($statuses->contains('for_approval')) {
+            return 'for_approval';
         }
 
-        $allApproved = $assignments->where('compliance_status', 'APPROVED')->count() === $assignments->count();
+        $allApproved = $statuses->filter(fn (string $status) => $status === 'complied')->count() === $assignments->count();
         if ($allApproved) {
             return 'complied';
+        }
+
+        if ($statuses->contains('overdue')) {
+            return 'overdue';
         }
 
         return 'pending';
@@ -337,24 +317,19 @@ class DashboardController extends Controller
             return 'pending';
         }
 
-        $assignmentIds = $assignments->pluck('id')->filter()->all();
-        $submissions = $requirement->submissions->filter(function ($submission) use ($assignmentIds, $deadlineKey) {
-            return in_array($submission->assignment_id, $assignmentIds, true)
-                && $submission->deadline_at_upload
-                && Carbon::parse($submission->deadline_at_upload)->toDateString() === $deadlineKey;
-        });
+        $statuses = $assignments->map(fn ($assignment) => $this->resolveAssignmentStateForDeadline($requirement, $assignment, $deadlineKey));
 
-        if ($submissions->where('approval_status', 'PENDING')->count() > 0) {
+        if ($statuses->contains('for_approval')) {
             return 'for_approval';
         }
 
-        if ($assignments->contains(fn ($assignment) => $this->resolveCalendarAssignmentState($assignment->compliance_status, $deadlineKey) === 'overdue')) {
-            return 'overdue';
-        }
-
-        $allApproved = $assignments->where('compliance_status', 'APPROVED')->count() === $assignments->count();
+        $allApproved = $statuses->filter(fn (string $status) => $status === 'complied')->count() === $assignments->count();
         if ($allApproved) {
             return 'complied';
+        }
+
+        if ($statuses->contains('overdue')) {
+            return 'overdue';
         }
 
         return 'pending';
@@ -374,20 +349,15 @@ class DashboardController extends Controller
         }
 
         $deadlineKey = Carbon::parse($requirement->deadline)->toDateString();
-        $userSubmissions = $this->filterSubmissionsByDeadline(
-            $requirement->submissions,
-            $deadlineKey,
-            $assignment->id
-        );
-
-        if ($userSubmissions->where('approval_status', 'PENDING')->count() > 0) {
-            return 'for_approval';
-        }
-
-        return $this->resolveCalendarAssignmentState($assignment->compliance_status, $deadlineKey);
+        return $this->resolveAssignmentStateForDeadline($requirement, $assignment, $deadlineKey);
     }
 
     private function summarizeAssignmentStatusForDeadline($requirement, $assignment, string $deadlineKey): string
+    {
+        return $this->resolveAssignmentStateForDeadline($requirement, $assignment, $deadlineKey);
+    }
+
+    private function resolveAssignmentStateForDeadline($requirement, $assignment, string $deadlineKey): string
     {
         $submissions = $this->filterSubmissionsByDeadline(
             $requirement->submissions,
@@ -397,6 +367,10 @@ class DashboardController extends Controller
 
         if ($submissions->where('approval_status', 'PENDING')->count() > 0) {
             return 'for_approval';
+        }
+
+        if ($submissions->where('approval_status', 'APPROVED')->count() > 0) {
+            return 'complied';
         }
 
         return $this->resolveCalendarAssignmentState($assignment->compliance_status, $deadlineKey);
