@@ -266,8 +266,12 @@ class DashboardController extends Controller
             return 'pending';
         }
 
-        $deadlineKey = Carbon::parse($requirement->deadline)->toDateString();
-        $statuses = $assignments->map(fn ($assignment) => $this->resolveAssignmentStateForDeadline($requirement, $assignment, $deadlineKey));
+        $statuses = $assignments->map(function ($assignment) use ($requirement) {
+            $deadlineKey = $this->assignmentDeadlineKey($requirement, $assignment);
+            return $deadlineKey
+                ? $this->resolveAssignmentStateForDeadline($requirement, $assignment, $deadlineKey)
+                : 'pending';
+        });
 
         $allApproved = $statuses->filter(fn (string $status) => $status === 'complied')->count() === $assignments->count();
         if ($allApproved) {
@@ -355,6 +359,20 @@ class DashboardController extends Controller
     private function summarizeAssignmentStatusForDeadline($requirement, $assignment, string $deadlineKey): string
     {
         return $this->resolveAssignmentStateForDeadline($requirement, $assignment, $deadlineKey);
+    }
+
+    private function assignmentDeadlineKey($requirement, $assignment): ?string
+    {
+        $deadline = $assignment->deadline ?? $requirement->deadline ?? null;
+        if (!$deadline) {
+            return null;
+        }
+
+        try {
+            return Carbon::parse($deadline)->toDateString();
+        } catch (\Throwable $e) {
+            return null;
+        }
     }
 
     private function resolveAssignmentStateForDeadline($requirement, $assignment, string $deadlineKey): string
