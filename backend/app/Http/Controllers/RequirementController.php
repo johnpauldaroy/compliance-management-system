@@ -69,14 +69,12 @@ class RequirementController extends Controller
                 $query->whereNotNull('deadline')
                     ->whereHas('assignments')
                     ->whereDoesntHave('assignments', function ($assignmentQuery) {
-                        $assignmentQuery->where('compliance_status', '!=', 'APPROVED');
+                        $this->whereAssignmentIsNotComputedApproved($assignmentQuery);
                     });
             } elseif ($status === 'overdue') {
                 $query->whereNotNull('deadline')
                     ->whereHas('assignments', function ($assignmentQuery) use ($today) {
-                        $assignmentQuery->whereNotNull('deadline')
-                            ->whereDate('deadline', '<', $today)
-                            ->whereNotIn('compliance_status', ['APPROVED', 'SUBMITTED']);
+                        $this->whereAssignmentIsComputedOverdue($assignmentQuery, $today);
                     });
             } elseif ($status === 'pending') {
                 $query->whereNotNull('deadline')
@@ -84,11 +82,9 @@ class RequirementController extends Controller
                         $statusQuery->whereDoesntHave('assignments')
                             ->orWhere(function ($subQuery) use ($today) {
                                 $subQuery->whereHas('assignments', function ($assignmentQuery) {
-                                    $assignmentQuery->where('compliance_status', '!=', 'APPROVED');
+                                    $this->whereAssignmentIsNotComputedApproved($assignmentQuery);
                                 })->whereDoesntHave('assignments', function ($assignmentQuery) use ($today) {
-                                    $assignmentQuery->whereNotNull('deadline')
-                                        ->whereDate('deadline', '<', $today)
-                                        ->whereNotIn('compliance_status', ['APPROVED', 'SUBMITTED']);
+                                    $this->whereAssignmentIsComputedOverdue($assignmentQuery, $today);
                                 });
                             });
                     });
@@ -863,6 +859,75 @@ class RequirementController extends Controller
         }
 
         return 'Pending (' . $percent . '%)';
+    }
+
+    private function whereAssignmentIsNotComputedApproved($assignmentQuery): void
+    {
+        $assignmentQuery->where(function ($notApprovedQuery) {
+            $this->whereAssignmentHasMatchingSubmissionStatus($notApprovedQuery, ['PENDING']);
+
+            $notApprovedQuery->orWhere(function ($approvalQuery) {
+                $approvalQuery->where(function ($statusQuery) {
+                    $statusQuery->whereNull('compliance_status')
+                        ->orWhere('compliance_status', '!=', 'APPROVED');
+                });
+                $this->whereAssignmentDoesntHaveMatchingSubmissionStatus($approvalQuery, ['APPROVED']);
+            });
+        });
+    }
+
+    private function whereAssignmentIsComputedOverdue($assignmentQuery, string $today): void
+    {
+        $assignmentQuery->whereNotNull('deadline')
+            ->whereDate('deadline', '<', $today)
+            ->where(function ($statusQuery) {
+                $statusQuery->whereNull('compliance_status')
+                    ->orWhereNotIn('compliance_status', ['APPROVED', 'SUBMITTED']);
+            });
+
+        $this->whereAssignmentDoesntHaveMatchingSubmissionStatus($assignmentQuery, ['PENDING']);
+        $this->whereAssignmentDoesntHaveMatchingSubmissionStatus($assignmentQuery, ['APPROVED']);
+    }
+
+    private function whereAssignmentHasMatchingSubmissionStatus($assignmentQuery, array $statuses): void
+    {
+        $assignmentQuery->whereExists(function ($submissionQuery) use ($statuses) {
+            $this->matchingSubmissionStatusQuery($submissionQuery, $statuses);
+        });
+    }
+
+    private function whereAssignmentDoesntHaveMatchingSubmissionStatus($assignmentQuery, array $statuses): void
+    {
+        $assignmentQuery->whereNotExists(function ($submissionQuery) use ($statuses) {
+            $this->matchingSubmissionStatusQuery($submissionQuery, $statuses);
+        });
+    }
+
+    private function matchingSubmissionStatusQuery($submissionQuery, array $statuses): void
+    {
+        $submissionQuery->select(DB::raw(1))
+            ->from('upload_submissions')
+            ->whereColumn('upload_submissions.requirement_id', 'requirements.id')
+            ->whereIn('upload_submissions.approval_status', $statuses)
+            ->whereNotNull('upload_submissions.deadline_at_upload')
+            ->whereRaw('DATE(upload_submissions.deadline_at_upload) = DATE(COALESCE(requirement_assignments.deadline, requirements.deadline))')
+            ->where(function ($matchQuery) {
+                $matchQuery->whereColumn('upload_submissions.assignment_id', 'requirement_assignments.id')
+                    ->orWhere(function ($legacyQuery) {
+                        $legacyQuery->whereNull('upload_submissions.assignment_id')
+                            ->whereColumn('upload_submissions.uploaded_by_user_id', 'requirement_assignments.assigned_to_user_id');
+                    })
+                    ->orWhere(function ($emailQuery) {
+                        $emailQuery->whereNull('upload_submissions.assignment_id')
+                            ->whereNotNull('upload_submissions.uploader_email')
+                            ->whereExists(function ($userQuery) {
+                                $userQuery->select(DB::raw(1))
+                                    ->from('users')
+                                    ->whereColumn('users.id', 'requirement_assignments.assigned_to_user_id')
+                                    ->whereRaw('LOWER(users.email) = LOWER(upload_submissions.uploader_email)');
+                            });
+                    });
+            });
     }
 
     private function summarizeStoredComplianceStatus(Requirement $requirement): string
