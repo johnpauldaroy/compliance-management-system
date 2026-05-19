@@ -9,7 +9,13 @@ import {
     FileTextOutlined,
     QuestionCircleOutlined,
 } from '@ant-design/icons';
+import { useQuery } from '@tanstack/react-query';
+import { authService } from '../services/authService';
+import { getAccessLevel } from '../lib/access';
+import type { User } from '../types';
 import './UserManualPage.css';
+
+type MeResponse = { user: User };
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -648,52 +654,71 @@ const PicTab = () => (
     </div>
 );
 
-const UserManualPage = () => (
-    <div className="user-manual-page">
-        <Title level={2}>User Manual</Title>
-        <Paragraph className="um-subtitle" type="secondary">
-            Select your role below to view the relevant guide.
-        </Paragraph>
+const UserManualPage = () => {
+    const { data } = useQuery<MeResponse>({
+        queryKey: ['me'],
+        queryFn: authService.me,
+        retry: false,
+    });
 
-        <Card className="um-card">
-            <Tabs
-                defaultActiveKey="pic"
-                size="large"
-                items={[
-                    {
-                        key: 'pic',
-                        label: (
-                            <span>
-                                <CheckCircleOutlined />
-                                Person-In-Charge (PIC)
-                            </span>
-                        ),
-                        children: <PicTab />,
-                    },
-                    {
-                        key: 'admin',
-                        label: (
-                            <span>
-                                <SafetyCertificateOutlined />
-                                Compliance &amp; Admin Specialist
-                            </span>
-                        ),
-                        children: <AdminTab />,
-                    },
-                    {
-                        key: 'super',
-                        label: (
-                            <span>
-                                <UserOutlined />
-                                Super Admin
-                            </span>
-                        ),
-                        children: <SuperAdminTab />,
-                    },
-                ]}
-            />
-        </Card>
-    </div>
-);
+    const accessLevel = getAccessLevel(data?.user?.roles || []);
+
+    const picTab = {
+        key: 'pic',
+        label: (
+            <span>
+                <CheckCircleOutlined />
+                Person-In-Charge (PIC)
+            </span>
+        ),
+        children: <PicTab />,
+    };
+
+    const adminTab = {
+        key: 'admin',
+        label: (
+            <span>
+                <SafetyCertificateOutlined />
+                Compliance &amp; Admin Specialist
+            </span>
+        ),
+        children: <AdminTab />,
+    };
+
+    const superTab = {
+        key: 'super',
+        label: (
+            <span>
+                <UserOutlined />
+                Super Admin
+            </span>
+        ),
+        children: <SuperAdminTab />,
+    };
+
+    const tabs =
+        accessLevel === 'super'
+            ? [superTab, adminTab, picTab]
+            : accessLevel === 'admin'
+            ? [adminTab, picTab]
+            : [picTab];
+
+    return (
+        <div className="user-manual-page">
+            <Title level={2}>User Manual</Title>
+            <Paragraph className="um-subtitle" type="secondary">
+                Select a role below to view the relevant guide.
+            </Paragraph>
+
+            <Card className="um-card">
+                <Tabs
+                    defaultActiveKey={tabs[0].key}
+                    size="large"
+                    items={tabs}
+                />
+            </Card>
+        </div>
+    );
+};
 
 export default UserManualPage;
