@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Form, Input, Button, Typography, message } from 'antd';
 import { UserOutlined, LockOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import desktopSlide1 from '../assets/login/1.png';
 import desktopSlide2 from '../assets/login/2.png';
 import desktopSlide3 from '../assets/login/3.png';
@@ -18,6 +19,7 @@ const LoginPage: React.FC = () => {
     const [loading, setLoading] = useState(false);
     const [checkingSession, setCheckingSession] = useState(true);
     const navigate = useNavigate();
+    const queryClient = useQueryClient();
 
     const carouselImages = [desktopSlide1, desktopSlide2, desktopSlide3];
     const mobileCarouselImages = [phoneSlide1, phoneSlide2, phoneSlide3];
@@ -68,8 +70,9 @@ const LoginPage: React.FC = () => {
         let isActive = true;
         authService
             .me()
-            .then(() => {
+            .then((response) => {
                 if (isActive) {
+                    queryClient.setQueryData(['me'], response);
                     navigate('/', { replace: true, state: { fromLogin: true } });
                 }
             })
@@ -88,7 +91,8 @@ const LoginPage: React.FC = () => {
     const onFinish = async (values: { email: string; password: string }) => {
         setLoading(true);
         try {
-            await authService.login(values);
+            const response = await authService.login(values);
+            queryClient.setQueryData(['me'], response);
             message.success('Welcome back!');
             navigate('/', { replace: true, state: { fromLogin: true } });
         } catch (error: any) {

@@ -91,6 +91,31 @@ class UploadSubmissionController extends Controller
         return response()->json($submission);
     }
 
+    public function updateSubmittedDeadline(Request $request, UploadSubmission $submission)
+    {
+        $this->authorize('update', $submission);
+
+        $validated = $request->validate([
+            'deadline_at_upload' => 'present|nullable|date',
+        ]);
+
+        $deadlineAtUpload = $validated['deadline_at_upload']
+            ? Carbon::parse($validated['deadline_at_upload'], config('app.timezone'))->toDateString()
+            : null;
+
+        $submission->update([
+            'deadline_at_upload' => $deadlineAtUpload,
+        ]);
+
+        $submission->files()->update([
+            'deadline_at_upload' => $deadlineAtUpload,
+        ]);
+
+        return response()->json(
+            $submission->fresh(['requirement.agency', 'uploader', 'assignment.user', 'files'])
+        );
+    }
+
     public function fileDownload(Request $request, UploadSubmission $submission, Upload $upload)
     {
         $this->authorize('view', $submission);

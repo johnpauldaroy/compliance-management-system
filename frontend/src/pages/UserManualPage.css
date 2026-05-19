@@ -1,0 +1,151 @@
+.user-manual-page {
+    padding: 0 4px;
+}
+
+.um-subtitle {
+    margin-bottom: 24px !important;
+}
+
+.um-card {
+    border-radius: 12px;
+}
+
+.um-tab-content {
+    padding: 8px 0;
+}
+
+.um-lead {
+    font-size: 15px;
+    margin-bottom: 24px !important;
+    color: rgba(0, 0, 0, 0.75);
+}
+
+.um-section {
+    margin-bottom: 28px;
+}
+
+.um-section-title {
+    margin-bottom: 12px !important;
+}
+
+.um-collapse {
+    background: transparent;
+    border: none;
+}
+
+.um-collapse .ant-collapse-item {
+    border: 1px solid #f0f0f0;
+    border-radius: 8px !important;
+    margin-bottom: 8px;
+    overflow: hidden;
+}
+
+.um-collapse .ant-collapse-header {
+    font-weight: 600;
+    font-size: 14px;
+}
+
+.um-collapse .ant-collapse-content {
+    border-top: 1px solid #f0f0f0;
+}
+
+.um-list {
+    padding-left: 20px;
+    margin: 8px 0;
+    line-height: 1.9;
+}
+
+.um-list li {
+    margin-bottom: 2px;
+}
+
+.um-checklist {
+    padding-left: 20px;
+    margin: 8px 0;
+    line-height: 1.9;
+    list-style-type: '✓  ';
+}
+
+.um-checklist li {
+    margin-bottom: 2px;
+}
+
+.um-mode-cards {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-top: 16px;
+}
+
+@media (max-width: 768px) {
+    .um-mode-cards {
+        grid-template-columns: 1fr;
+    }
+}
+
+.um-mode-card {
+    border-radius: 8px;
+}
+
+.um-example {
+    background: #fafafa;
+    border-left: 3px solid #d9d9d9;
+    padding: 10px 14px;
+    margin-top: 12px;
+    border-radius: 0 6px 6px 0;
+}
+
+.um-notification-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 12px;
+}
+
+.um-notification-card {
+    border-radius: 8px;
+}
+
+.um-notification-card .ant-card-head {
+    font-weight: 600;
+    font-size: 13px;
+}
+
+.um-timeline {
+    background: #fafafa;
+    border-radius: 8px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.um-timeline-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    font-size: 13px;
+    line-height: 1.6;
+}
+
+.um-faq {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.um-faq-item {
+    border-left: 3px solid #1677ff;
+    padding-left: 14px;
+}
+
+.um-faq-q {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 14px;
+}
+
+.um-faq-a {
+    color: rgba(0, 0, 0, 0.65);
+    margin-bottom: 0 !important;
+}

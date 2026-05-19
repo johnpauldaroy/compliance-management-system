@@ -26,7 +26,7 @@ export const getAccessLevel = (roles: RoleLike[] | null | undefined): AccessLeve
 export const canAccessPath = (accessLevel: AccessLevel, path: string) => {
     const normalized = normalizePath(path);
 
-    if (normalized === '/login' || normalized === '/profile') {
+    if (normalized === '/login' || normalized === '/profile' || normalized === '/user-manual') {
         return true;
     }
 
@@ -50,7 +50,7 @@ export const isMenuKeyAllowed = (accessLevel: AccessLevel, key: string) => {
         return key !== '/audit-trail';
     }
 
-    return key === '/' || key === '/my-requirements' || key === '/uploads';
+    return key === '/' || key === '/my-requirements' || key === '/uploads' || key === '/user-manual';
 };
 
 export const getDefaultRoute = (accessLevel: AccessLevel) => {

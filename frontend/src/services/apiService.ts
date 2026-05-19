@@ -155,6 +155,11 @@ export const uploadService = {
         await api.get('/sanctum/csrf-cookie', { baseURL: rootUrl });
         return (await api.post<UploadSubmission>(`/submissions/${id}/reject`, { remarks }, { headers: getCsrfHeaders() })).data;
     },
+    updateSubmittedDeadline: async (id: number, data: { deadline_at_upload: string | null }) => {
+        const rootUrl = getRootUrl();
+        await api.get('/sanctum/csrf-cookie', { baseURL: rootUrl });
+        return (await api.patch<UploadSubmission>(`/submissions/${id}/submitted-deadline`, data, { headers: getCsrfHeaders() })).data;
+    },
     download: async (submissionId: number, uploadId: number, inline = false) =>
         (await api.get(`/submissions/${submissionId}/files/${uploadId}/download`, { params: { inline }, responseType: 'blob' })).data,
     getSignedUrl: async (submissionId: number, uploadId: number, inline = false) =>

@@ -11,11 +11,12 @@ import {
     HistoryOutlined,
     LogoutOutlined,
     MenuOutlined,
+    BookOutlined,
 } from '@ant-design/icons';
 import { authService } from '../../services/authService';
 import { canAccessPath, getAccessLevel, getDefaultRoute, isMenuKeyAllowed, type AccessLevel } from '../../lib/access';
 import './MainLayout.css';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { User } from '../../types';
 
 const { Sider, Header, Content } = Layout;
@@ -29,6 +30,7 @@ const MainLayout = () => {
     const lastScrollY = useRef(0);
     const lastDirection = useRef<'up' | 'down' | null>(null);
     const scrollTicking = useRef(false);
+    const queryClient = useQueryClient();
     const siderWidth = 256;
     const collapsedWidth = 80;
 
@@ -43,6 +45,7 @@ const MainLayout = () => {
                 try {
                     await authService.logout();
                 } finally {
+                    queryClient.removeQueries({ queryKey: ['me'] });
                     navigate('/login');
                 }
             },
@@ -57,6 +60,7 @@ const MainLayout = () => {
         { key: '/uploads', label: 'Approvals', icon: <SafetyCertificateOutlined /> },
         { key: '/users', label: 'Users', icon: <UserOutlined /> },
         { key: '/audit-trail', label: 'Audit Trail', icon: <HistoryOutlined /> },
+        { key: '/user-manual', label: 'User Manual', icon: <BookOutlined /> },
     ];
 
     const handleMenuClick = ({ key }: { key: string }) => {

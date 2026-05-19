@@ -176,6 +176,7 @@ const RequirementsPage = () => {
     const location = useLocation();
     const [form] = Form.useForm<RequirementFormValues>();
     const [uploadForm] = Form.useForm();
+    const [submittedDeadlineForm] = Form.useForm();
     const [isDrawerOpen, setIsDrawerOpen] = useState(false);
     const [editingRequirement, setEditingRequirement] = useState<Requirement | null>(null);
     const [detailId, setDetailId] = useState<number | null>(null);
@@ -195,6 +196,8 @@ const RequirementsPage = () => {
     const [filesModalOpen, setFilesModalOpen] = useState(false);
     const [activeFiles, setActiveFiles] = useState<UploadFileRecord[]>([]);
     const [activeSubmissionId, setActiveSubmissionId] = useState<number | null>(null);
+    const [submittedDeadlineModalOpen, setSubmittedDeadlineModalOpen] = useState(false);
+    const [editingSubmittedDeadline, setEditingSubmittedDeadline] = useState<UploadSubmission | null>(null);
 
     const isMonthlyFrequency = (value?: string | null) => (value || '').toLowerCase().includes('month');
 
@@ -442,6 +445,21 @@ const RequirementsPage = () => {
         },
     });
 
+    const updateSubmittedDeadline = useMutation({
+        mutationFn: ({ id, deadline_at_upload }: { id: number; deadline_at_upload: string | null }) =>
+            uploadService.updateSubmittedDeadline(id, { deadline_at_upload }),
+        onSuccess: () => {
+            message.success('Submitted deadline updated.');
+            setSubmittedDeadlineModalOpen(false);
+            setEditingSubmittedDeadline(null);
+            submittedDeadlineForm.resetFields();
+            refetchDetails();
+        },
+        onError: (error: any) => {
+            message.error(error.response?.data?.message || 'Failed to update submitted deadline.');
+        },
+    });
+
     const handleAdd = () => {
         setEditingRequirement(null);
         form.resetFields();
@@ -451,6 +469,15 @@ const RequirementsPage = () => {
             sequential_deadlines: [],
         });
         setIsDrawerOpen(true);
+    };
+
+    const openSubmittedDeadlineModal = (submission: UploadSubmission) => {
+        submittedDeadlineForm.resetFields();
+        setEditingSubmittedDeadline(submission);
+        submittedDeadlineForm.setFieldsValue({
+            deadline_at_upload: toDeadlineDayjs(submission.deadline_at_upload) || undefined,
+        });
+        setSubmittedDeadlineModalOpen(true);
     };
 
     const handleEdit = (record: Requirement) => {
@@ -1368,11 +1395,24 @@ const RequirementsPage = () => {
                                                                             {submission.upload_date ? new Date(submission.upload_date).toLocaleString() : 'N/A'}
                                                                         </span>
                                                                     </div>
-                                                                    {submission.deadline_at_upload ? (
+                                                                    {submission.deadline_at_upload || isAdmin ? (
                                                                         <div className="requirements-submission-item">
                                                                             <span className="requirements-submission-label">Submitted for Deadline Set On</span>
                                                                             <span className="requirements-submission-value">
-                                                                                {formatPhDate(submission.deadline_at_upload)}
+                                                                                <Space size={6} wrap>
+                                                                                    <span>{submission.deadline_at_upload ? formatPhDate(submission.deadline_at_upload) : 'N/A'}</span>
+                                                                                    {isAdmin ? (
+                                                                                        <Tooltip title="Edit submitted deadline">
+                                                                                            <Button
+                                                                                                type="text"
+                                                                                                size="small"
+                                                                                                icon={<EditOutlined />}
+                                                                                                aria-label="Edit submitted deadline"
+                                                                                                onClick={() => openSubmittedDeadlineModal(submission)}
+                                                                                            />
+                                                                                        </Tooltip>
+                                                                                    ) : null}
+                                                                                </Space>
                                                                             </span>
                                                                         </div>
                                                                     ) : null}
@@ -1576,6 +1616,45 @@ const RequirementsPage = () => {
                     </Form.Item>
                     <Form.Item label="Admin Remarks" name="admin_remarks">
                         <Input.TextArea rows={3} />
+                    </Form.Item>
+                </Form>
+            </Modal>
+            <Modal
+                title="Edit Submitted Deadline"
+                open={submittedDeadlineModalOpen}
+                onCancel={() => {
+                    setSubmittedDeadlineModalOpen(false);
+                    setEditingSubmittedDeadline(null);
+                    submittedDeadlineForm.resetFields();
+                }}
+                onOk={() => submittedDeadlineForm.submit()}
+                okText="Save"
+                confirmLoading={updateSubmittedDeadline.isPending}
+                destroyOnClose
+            >
+                <Form
+                    form={submittedDeadlineForm}
+                    layout="vertical"
+                    onFinish={(values) => {
+                        if (!editingSubmittedDeadline) {
+                            return;
+                        }
+                        updateSubmittedDeadline.mutate({
+                            id: editingSubmittedDeadline.id,
+                            deadline_at_upload: values.deadline_at_upload
+                                ? values.deadline_at_upload.format('YYYY-MM-DD')
+                                : null,
+                        });
+                    }}
+                >
+                    <Form.Item
+                        label="Submitted for deadline"
+                        name="deadline_at_upload"
+                    >
+                        <DatePicker
+                            format="YYYY-MM-DD"
+                            style={{ width: '100%' }}
+                        />
                     </Form.Item>
                 </Form>
             </Modal>

@@ -8,6 +8,7 @@ import RequirementsPage from './pages/RequirementsPage';
 import MyRequirementsPage from './pages/MyRequirementsPage';
 import ApprovalsPage from './pages/ApprovalsPage';
 import AuditTrailPage from './pages/AuditTrailPage';
+import UserManualPage from './pages/UserManualPage';
 import MainLayout from './components/layout/MainLayout';
 import { authService } from './services/authService';
 import ProfilePage from './pages/ProfilePage';
@@ -63,6 +64,7 @@ function App() {
                         <Route path="uploads" element={<ApprovalsPage />} />
                         <Route path="users" element={<UsersPage />} />
                         <Route path="audit-trail" element={<AuditTrailPage />} />
+                        <Route path="user-manual" element={<UserManualPage />} />
                         <Route path="profile" element={<ProfilePage />} />
                         <Route path="*" element={<Navigate to="/" replace />} />
                     </Route>

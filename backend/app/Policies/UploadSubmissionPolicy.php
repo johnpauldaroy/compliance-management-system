@@ -50,4 +50,9 @@ class UploadSubmissionPolicy
     {
         return $user->hasAnyRole(['Super Admin', 'Compliance & Admin Specialist']);
     }
+
+    public function update(User $user, UploadSubmission $submission): bool
+    {
+        return $user->hasAnyRole(['Super Admin', 'Compliance & Admin Specialist']);
+    }
 }

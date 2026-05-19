@@ -44,6 +44,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::apiResource('submissions', UploadSubmissionController::class)->only(['index', 'store']);
     Route::get('/submissions/{submission}/files/{upload}/download', [UploadSubmissionController::class, 'fileDownload']);
     Route::get('/submissions/{submission}/files/{upload}/signed-url', [UploadSubmissionController::class, 'fileSignedUrl']);
+    Route::patch('/submissions/{submission}/submitted-deadline', [UploadSubmissionController::class, 'updateSubmittedDeadline']);
     Route::post('/submissions/{submission}/approve', [UploadSubmissionController::class, 'approve']);
     Route::post('/submissions/{submission}/reject', [UploadSubmissionController::class, 'reject']);
     Route::apiResource('positions', PositionController::class);
