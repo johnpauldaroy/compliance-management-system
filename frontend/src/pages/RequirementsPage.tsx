@@ -1140,12 +1140,12 @@ const RequirementsPage = () => {
                             return (
                                 <Form.Item
                                     label="Auto-advance monthly deadline"
-                                    name="auto_deadline_enabled"
-                                    valuePropName="checked"
                                     tooltip="When frequency is monthly, automatically move the deadline to next month after approval."
                                 >
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                                        <Switch />
+                                        <Form.Item name="auto_deadline_enabled" valuePropName="checked" noStyle>
+                                            <Switch />
+                                        </Form.Item>
                                         <Typography.Text type="secondary">{helperText}</Typography.Text>
                                     </div>
                                 </Form.Item>
