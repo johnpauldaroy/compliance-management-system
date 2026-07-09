@@ -12,6 +12,7 @@ import {
     LogoutOutlined,
     MenuOutlined,
     BookOutlined,
+    BarChartOutlined,
 } from '@ant-design/icons';
 import { authService } from '../../services/authService';
 import { canAccessPath, getAccessLevel, getDefaultRoute, isMenuKeyAllowed, type AccessLevel } from '../../lib/access';
@@ -59,6 +60,7 @@ const MainLayout = () => {
         { key: '/my-requirements', label: 'My Requirements', icon: <CheckCircleOutlined /> },
         { key: '/uploads', label: 'Approvals', icon: <SafetyCertificateOutlined /> },
         { key: '/users', label: 'Users', icon: <UserOutlined /> },
+        { key: '/reports', label: 'Reports', icon: <BarChartOutlined /> },
         { key: '/audit-trail', label: 'Audit Trail', icon: <HistoryOutlined /> },
         { key: '/user-manual', label: 'User Manual', icon: <BookOutlined /> },
     ];

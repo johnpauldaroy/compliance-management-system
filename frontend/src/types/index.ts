@@ -160,3 +160,113 @@ export interface UserDetails {
   user: User;
   requirements: Requirement[];
 }
+
+export type ComplianceReportStatus =
+  | 'complied_on_time'
+  | 'complied_late'
+  | 'pending_approval'
+  | 'pending_submission'
+  | 'overdue'
+  | 'rejected';
+
+export interface ComplianceReportFilters {
+  start_date: string;
+  end_date: string;
+  agency_id?: number;
+  branch_unit_department_id?: number;
+  user_id?: number;
+  branch?: string;
+  frequency?: string;
+  status?: ComplianceReportStatus;
+}
+
+export interface ComplianceReportRow {
+  assignment_id: number;
+  assignment_code: string;
+  requirement_id: number;
+  requirement_code: string;
+  requirement: string;
+  agency_id?: number | null;
+  agency_code?: string | null;
+  agency_name?: string | null;
+  user_id?: number | null;
+  user_code?: string | null;
+  user_name?: string | null;
+  user_email?: string | null;
+  user_branch?: string | null;
+  frequency?: string | null;
+  assignment_mode: 'parallel' | 'sequential';
+  sequence_order?: number | null;
+  deadline: string;
+  submitted_at?: string | null;
+  approved_at?: string | null;
+  status: ComplianceReportStatus;
+  status_label: string;
+  days_late: number;
+  latest_submission_id?: number | null;
+  latest_submission_code?: string | null;
+  latest_submission_status?: 'PENDING' | 'APPROVED' | 'REJECTED' | null;
+}
+
+export interface ComplianceReportSummary {
+  total_due: number;
+  requirements: number;
+  users: number;
+  complied_on_time: number;
+  complied_late: number;
+  pending_approval: number;
+  pending_submission: number;
+  overdue: number;
+  rejected: number;
+  completed: number;
+  open: number;
+  late_or_overdue: number;
+  completion_rate: number;
+  on_time_rate: number;
+  open_rate: number;
+  avg_days_late: number;
+  max_days_late: number;
+}
+
+export interface ComplianceReportStatusBreakdown {
+  status: ComplianceReportStatus;
+  label: string;
+  count: number;
+}
+
+export interface ComplianceReportUserBreakdown {
+  user_id?: number | null;
+  user_code?: string | null;
+  user_name?: string | null;
+  user_branch?: string | null;
+  total: number;
+  complied_on_time: number;
+  complied_late: number;
+  pending_approval: number;
+  pending_submission: number;
+  overdue: number;
+  rejected: number;
+}
+
+export interface ComplianceReportAgencyBreakdown {
+  agency_id?: number | null;
+  agency_code?: string | null;
+  agency_name?: string | null;
+  total: number;
+  complied_on_time: number;
+  complied_late: number;
+  pending_approval: number;
+  pending_submission: number;
+  overdue: number;
+  rejected: number;
+}
+
+export interface ComplianceReportResponse {
+  start_date: string;
+  end_date: string;
+  summary: ComplianceReportSummary;
+  status_breakdown: ComplianceReportStatusBreakdown[];
+  user_breakdown: ComplianceReportUserBreakdown[];
+  agency_breakdown: ComplianceReportAgencyBreakdown[];
+  rows: ComplianceReportRow[];
+}

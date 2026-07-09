@@ -17,13 +17,16 @@
   },
   "dependencies": {
     "@ant-design/icons": "^6.1.0",
+    "@ant-design/plots": "^2.6.8",
     "@tanstack/react-query": "^5.90.16",
     "antd": "^6.2.0",
     "axios": "^1.13.2",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.8",
     "lucide-react": "^0.562.0",
     "react": "^19.2.3",
-    "react-vant": "^3.3.5",
     "react-dom": "^19.2.3",
-    "react-router-dom": "^7.12.0"
+    "react-router-dom": "^7.12.0",
+    "react-vant": "^3.3.5"
   }
 }

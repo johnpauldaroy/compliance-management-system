@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Button, Collapse, Descriptions, Drawer, Empty, Form, Input, Modal, Select, Space, Switch, Table, Tag, Typography, message, Alert, Tooltip, Upload } from 'antd';
+import { AutoComplete, Button, Collapse, Descriptions, Drawer, Empty, Form, Input, Modal, Select, Space, Switch, Table, Tag, Typography, message, Alert, Tooltip, Upload } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { CheckCircleOutlined, EditOutlined, InfoCircleOutlined, KeyOutlined, ReloadOutlined, StopOutlined, UploadOutlined, DownloadOutlined } from '@ant-design/icons';
@@ -10,7 +10,7 @@ import './UsersPage.css';
 
 const { Title, Text } = Typography;
 
-const branchOptions = [
+const defaultBranchNames = [
     'Head Office',
     'Barbaza',
     'Culasi',
@@ -26,7 +26,9 @@ const branchOptions = [
     'Sara',
     'President Roxas',
     'Buenavista',
-].map((branch) => ({ label: branch, value: branch }));
+];
+
+const defaultBranchOptions = defaultBranchNames.map((branch) => ({ label: branch, value: branch }));
 
 const userTypeOptions = [
     'Super Admin',
@@ -70,6 +72,24 @@ const UsersPage = () => {
     });
 
     const users: User[] = data?.data || [];
+
+    const branchOptions = useMemo(() => {
+        const defaultLookup = new Set(defaultBranchNames.map((branch) => branch.toLowerCase()));
+        const savedBranches = Array.from(
+            new Set(
+                users
+                    .map((user) => user.branch?.trim())
+                    .filter((branch): branch is string => Boolean(branch))
+            )
+        )
+            .filter((branch) => !defaultLookup.has(branch.toLowerCase()))
+            .sort((a, b) => a.localeCompare(b));
+
+        return [
+            ...defaultBranchOptions,
+            ...savedBranches.map((branch) => ({ label: branch, value: branch })),
+        ];
+    }, [users]);
 
     const {
         data: detailsData,
@@ -709,10 +729,15 @@ const UsersPage = () => {
                             rules={[{ required: true, message: 'Branch is required.' }]}
                             className="users-field"
                         >
-                            <Select
+                            <AutoComplete
                                 options={branchOptions}
-                                showSearch
-                                optionFilterProp="label"
+                                allowClear
+                                placeholder="Select or type a branch"
+                                filterOption={(inputValue, option) =>
+                                    String(option?.value ?? '')
+                                        .toLowerCase()
+                                        .includes(inputValue.toLowerCase())
+                                }
                             />
                         </Form.Item>
                     </div>

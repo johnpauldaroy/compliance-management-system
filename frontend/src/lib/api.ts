@@ -3,7 +3,7 @@ import axios from 'axios';
 const trimTrailingSlashes = (value: string) => value.replace(/\/+$/, '');
 
 const normalizeApiBaseUrl = (rawUrl?: string) => {
-  const fallback = 'http://localhost:8001/api';
+  const fallback = 'http://127.0.0.1:3307/api';
   const candidate = trimTrailingSlashes((rawUrl || fallback).trim());
 
   if (/\/api$/i.test(candidate)) {

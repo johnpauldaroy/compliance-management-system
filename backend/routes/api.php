@@ -11,6 +11,7 @@ use App\Http\Controllers\PositionController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\ComplianceReportController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/login', [AuthController::class, 'login']);
@@ -50,4 +51,5 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::apiResource('positions', PositionController::class);
 
     Route::get('/audit-logs', [AuditLogController::class, 'index']);
+    Route::get('/reports/compliance', [ComplianceReportController::class, 'compliance']);
 });

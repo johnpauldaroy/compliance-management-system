@@ -1,5 +1,5 @@
 import api, { API_ROOT_URL } from '../lib/api';
-import type { Agency, BranchUnitDepartment, PaginatedResponse, Position, Requirement, UploadSubmission, User, UserDetails } from '../types';
+import type { Agency, BranchUnitDepartment, ComplianceReportFilters, ComplianceReportResponse, PaginatedResponse, Position, Requirement, UploadSubmission, User, UserDetails } from '../types';
 
 const getCookie = (name: string) => {
     const value = `; ${document.cookie}`;
@@ -191,6 +191,11 @@ export const dashboardService = {
 
 export const auditService = {
     getLogs: async () => (await api.get<any>('/audit-logs')).data,
+};
+
+export const reportService = {
+    getCompliance: async (params: ComplianceReportFilters) =>
+        (await api.get<ComplianceReportResponse>('/reports/compliance', { params })).data,
 };
 
 export const profileService = {
